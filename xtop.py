@@ -17,15 +17,19 @@ def main(stdscr):
 
         height, width = stdscr.getmaxyx()
 
-        message = "Dynamic Terminal UI"
+        message = "xtop Terminal UI"
         stdscr.addstr(0, 0, message)
 
         dynamic_data = f"Time: {time.strftime('%Y/%m/%d, %H:%M:%S')}"
         stdscr.addstr(1, 0, dynamic_data)
 
+        nvidia_obj.update()
+
+        position_base = 2
         for i in range(nvidia_obj.gpu_number):
-            stdscr.addstr(i+2, 0, nvidia_obj.gpus[i].getTitle())
-            stdscr.addstr(i+3, 4, nvidia_obj.gpus[i].getData())
+            stdscr.addstr(i+position_base, 0, nvidia_obj.gpus[i].getTitle())
+            stdscr.addstr(i+position_base+1, 4, nvidia_obj.gpus[i].getData())
+            position_base += 2
 
         key = stdscr.getch()
         if key == ord('q'):
