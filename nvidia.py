@@ -33,7 +33,7 @@ class NvidiaGPU:
         pynvml.nvmlInit()
         self.gpu_number = pynvml.nvmlDeviceGetCount()
         for i in range(self.gpu_number):
-            name = pynvml.nvmlDeviceGetName(pynvml.nvmlDeviceGetHandleByIndex(i)).decode('utf-8')
+            name = pynvml.nvmlDeviceGetName(pynvml.nvmlDeviceGetHandleByIndex(i))
             gpu = GPUStats(i, name)
             self.gpus.append(gpu)
         self.start = True
