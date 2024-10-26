@@ -2,7 +2,7 @@
 
 clean:
 	-rm -rf dist/
-build: clean lib
+build: clean
 	python -m build
 upload:
 	twine upload dist/*
