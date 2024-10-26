@@ -14,7 +14,8 @@ readme = "README.md"
 license = {text = "GPL-3.0-or-later"}
 requires-python = ">=3.9"
 dependencies = [
-    "pypci-ng>=0.0.5"
+    "pypci-ng>=0.0.5",
+    "nvidia-ml-py"
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
