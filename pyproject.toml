@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "xtop"
+version = "0.0.1"
+description = "xtop, a command line xpu hardware monitoring tool that supports CPU, GPU, and NPU."
+keywords = ["xtop", "xpu", "system information", "command line tool", "python", "hardware information", "GPU", "NPU"]
+authors = [
+    { name = "Xiao Ran", email = "xiaoran.007@icloud.com" }
+]
+readme = "README.md"
+license = {text = "GPL-3.0-or-later"}
+requires-python = ">=3.9"
+dependencies = [
+    "pypci-ng>=0.0.5"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent"
+]
+urls = {homepage = "https://github.com/xiaoran007/xtop"}
+
+[tool.setuptools]
+packages = {find = {where = ["src"]}}
+package-dir = {"" = "src"}
+include-package-data = true
+
+[tool.setuptools.package-data]
+"xtop" = []
+
+[project.scripts]
+xtop = "xtop.__main__:main"
