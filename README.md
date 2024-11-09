@@ -1,7 +1,7 @@
 # xtop
 
 
-[![Downloads](https://static.pepy.tech/badge/pypci-ng)](https://pepy.tech/project/pypci-ng)
+[![Downloads](https://static.pepy.tech/badge/xtop)](https://pepy.tech/project/xtop)
 ![PyPI - Version](https://img.shields.io/pypi/v/xtop?label=version)
 
 ![Static Badge](https://img.shields.io/badge/Linux-blue)
