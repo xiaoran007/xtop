@@ -12,7 +12,10 @@ xtop, a command line xpu hardware monitoring tool that supports CPU, GPU, and NP
 
 ![demo](https://files.catbox.moe/fb9ryz.jpg)
 
-## 1 Install
+## 0. Why this project
+There are many command-line based resource monitors, such as _htop_ and _nvtop_, but they are usually distributed through the system's package manager, which means that administrator privileges are required to install them. However, in most cases, asking administrators to install these programs is not a pleasant process. So a program implemented in **Python** and distributed using **pip** should be more useful (at least to me).
+
+## 1. Install
 ### 1.1 Install by pipx
 **pipx** is an amazing tool to help you install and run applications written in Python. It is more like **brew** or **apt**. You can find more information about it here [pipx](https://github.com/pypa/pipx). **pipx** is available on almost all major platforms and is usually provided by the corresponding package manager. If you haven't used pipx before, you can refer to this [document](https://pipx.pypa.io/stable/installation/) to install it.
 
@@ -67,7 +70,7 @@ hint: See PEP 668 for the detailed specification.
 This is due to the fact that system Python is not supposed to be managed by pip. You can simply use **pipx** to install **xtop**. Or you can use a virtual environment (venv), conda environment or force remove this restriction (not recommended).
 
 
-## Usage
+## 2. Usage
 ### Use as a command line tool
 You can use this tool directly from the command line with the following command, just like other programs.
 ```shell
@@ -90,19 +93,19 @@ Please note that the command line entry for __xtop__ is created by pip, and depe
 
 More functionalities are under development.
 
-## Supported (Tested) OS
+## 3. Supported (Tested) OS
 * Linux
 * Windows (Only GPU)
 
 
-## Build from source
-### Build tools
+## 4. Build from source
+### 4.1 Build tools
 Make sure the following Python build tools are already installed.
 * setuptools
 * build
 * twine
 
-### Build package
+### 4.2 Build package
 clone the project, and run:
 ```shell
 python -m build
