@@ -35,16 +35,17 @@ def GPU_UI(stdscr, enable_log=False):
         position_base = 2
         for i in range(nvidia_obj.gpu_number):
             stdscr.addstr(i+position_base, 0, nvidia_obj.gpus[i].getTitle())
-            stdscr.addstr(i+position_base+1, 4, nvidia_obj.gpus[i].getData())
+            stdscr.addstr(i+position_base+1, 4, nvidia_obj.gpus[i].getUtilization())
+            stdscr.addstr(i+position_base+2, 4, nvidia_obj.gpus[i].getPower())
             if enable_log:
                 dir_path = os.path.expanduser("~/xtop")
                 os.makedirs(dir_path, exist_ok=True)
                 with open(f"{dir_path}/GPU{i}_{magic_number}.csv", "a") as f:
                     f.write(f"{time.time()}, {nvidia_obj.gpus[i].utilization}\n")
-                stdscr.addstr(i + position_base + 2, 4, f"File log to {dir_path}/GPU{i}_{magic_number}.csv")
-                position_base += 3
+                stdscr.addstr(i + position_base + 3, 4, f"File log to {dir_path}/GPU{i}_{magic_number}.csv")
+                position_base += 4
 
-            position_base += 2
+            position_base += 3
 
         key = stdscr.getch()
         if key == ord('q'):
