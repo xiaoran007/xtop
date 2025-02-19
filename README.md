@@ -8,7 +8,7 @@
 ![Static Badge](https://img.shields.io/badge/Windows-green)
 
 
-xtop, a command line xpu hardware monitoring tool that supports CPU, GPU, and NPU.
+xtop, a command line xpu hardware monitoring tool that supports CPU, GPU, and NPU. **Currently,  this project is still in the initial stage, only Nvidia GPU and Intel NPU are supported on Linux and Windows System**
 
 ![demo](https://files.catbox.moe/fb9ryz.jpg)
 
