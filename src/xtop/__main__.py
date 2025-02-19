@@ -6,8 +6,8 @@ import argparse
 
 
 def main():
-    if getOS() != "linux":
-        print(f"Only Linux is supported for now. Current OS: {getOS()}")
+    if getOS() not in ["linux", "windows"]:
+        print(f"Only Linux and Windows is supported for now. Current OS: {getOS()}")
         return
 
     parser = argparse.ArgumentParser(prog="xtop", description="xpu information viewer")
