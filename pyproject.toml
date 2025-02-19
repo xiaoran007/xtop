@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xtop"
-version = "0.0.3"
+version = "0.0.4"
 description = "xtop, a command line xpu hardware monitoring tool that supports CPU, GPU, and NPU."
 keywords = ["xtop", "xpu", "system information", "command line tool", "python", "hardware information", "GPU", "NPU"]
 authors = [
@@ -14,7 +14,7 @@ readme = "README.md"
 license = {text = "GPL-3.0-or-later"}
 requires-python = ">=3.9"
 dependencies = [
-    "pypci-ng>=0.0.7",
+    "pypci-ng>=0.2.0",
     "nvidia-ml-py"
 ]
 classifiers = [
