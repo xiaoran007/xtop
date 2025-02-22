@@ -12,7 +12,7 @@ def draw_line_chart(stdscr, data, max_height, max_width, y_offset=0, x_offset=0)
             y = max_height - j + y_offset
             x = i + x_offset
             if 0 <= y < curses.LINES and 0 <= x < curses.COLS:
-                stdscr.addstr(y, x, '|')
+                stdscr.addstr(y, x, '█')
 
 
 def draw_line_chart2(stdscr, data, max_height, max_width, y_offset=0, x_offset=0):
