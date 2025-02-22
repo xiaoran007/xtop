@@ -3,16 +3,24 @@ import time
 from ..backend.gpu import NvidiaGPU
 import os
 import math
+import dataclasses
 
 
-def draw_line_chart(stdscr, data, max_height, max_width, y_offset=0, x_offset=0):
+# Place holder
+@dataclasses.dataclass
+class Style:
+    default = '|'
+    full = '█'
+
+
+def draw_line_chart(stdscr, data, max_height, max_width, y_offset=0, x_offset=0, style=Style.default):
     for i, value in enumerate(data):
         height = int(value / 10) + 1
         for j in range(height):
             y = max_height - j + y_offset
             x = i + x_offset
             if 0 <= y < curses.LINES and 0 <= x < curses.COLS:
-                stdscr.addstr(y, x, '█')
+                stdscr.addstr(y, x, style)
 
 
 def draw_line_chart2(stdscr, data, max_height, max_width, y_offset=0, x_offset=0):

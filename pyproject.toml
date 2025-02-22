@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "xtop"
-version = "0.1.1"
+version = "0.1.2"
 description = "xtop, a command line xpu hardware monitoring tool that supports CPU, GPU, and NPU."
 keywords = ["xtop", "xpu", "system information", "command line tool", "python", "hardware information", "GPU", "NPU"]
 authors = [
