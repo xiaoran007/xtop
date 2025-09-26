@@ -14,14 +14,18 @@ class GPUStats:
         self.memory_free = None
         self.power_usage = None
         self.temperature = None
+        self.fan_speed = None
+        self.fan_speed_rpm = None
 
-    def update(self, utilization, memory_used, memory_total, memory_free, power_usage, temperature):
+    def update(self, utilization, memory_used, memory_total, memory_free, power_usage, temperature, fan_speed, fan_speed_rpm):
         self.utilization = utilization
         self.memory_used = memory_used
         self.memory_total = memory_total
         self.memory_free = memory_free
         self.power_usage = power_usage
         self.temperature = temperature
+        self.fan_speed = fan_speed
+        self.fan_speed_rpm = fan_speed_rpm
 
     def getTitle(self):
         return f"Device {self.gpu_id}: {self.name} (Driver: {self.driver_version}, CUDA {self.cuda_version}, CUDA CC {self.cuda_cc})"
@@ -30,7 +34,7 @@ class GPUStats:
         return f"Utilization: {self.utilization}% Memory Used: {self.memory_used:.2f}MB / {self.memory_total:.2f}MB"
 
     def getPower(self):
-        return f"Power Usage: {self.power_usage}W Temperature: {self.temperature}°C"
+        return f"Power Usage: {self.power_usage}W Temperature: {self.temperature}°C Fan Speed: {self.fan_speed_rpm} RPM ({self.fan_speed}%)"
 
 
 class NvidiaGPU:
@@ -61,11 +65,13 @@ class NvidiaGPU:
             utilization = pynvml.nvmlDeviceGetUtilizationRates(handle).gpu
             mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
             temperature = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+            fan_speed = pynvml.nvmlDeviceGetFanSpeed(handle)
+            fan_speed_rpm = pynvml.nvmlDeviceGetFanSpeedRPM(handle)
             power_usage = round(pynvml.nvmlDeviceGetPowerUsage(handle) / 1000, 1)  # function return mW.
             mem_used = mem_info.used / (1024 ** 2)
             mem_total = mem_info.total / (1024 ** 2)
             mem_free = mem_info.free / (1024 ** 2)
-            gpu.update(utilization, mem_used, mem_total, mem_free, power_usage, temperature)
+            gpu.update(utilization, mem_used, mem_total, mem_free, power_usage, temperature, fan_speed, fan_speed_rpm)
 
     @staticmethod
     def __convertCudaDriverVersion(version: int) -> str:
@@ -76,4 +82,3 @@ class NvidiaGPU:
     @staticmethod
     def __convertCudaCC(cuda_cc: tuple) -> str:
         return f"{cuda_cc[0]}.{cuda_cc[1]}"
-
