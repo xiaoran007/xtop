@@ -34,7 +34,11 @@ class GPUStats:
         return f"Utilization: {self.utilization}% Memory Used: {self.memory_used:.2f}MB / {self.memory_total:.2f}MB"
 
     def getPower(self):
-        return f"Power Usage: {self.power_usage}W Temperature: {self.temperature}°C Fan Speed: {self.fan_speed_rpm} RPM ({self.fan_speed}%)"
+        if self.fan_speed is not None and self.fan_speed_rpm is not None:
+            fan_info = f"Fan Speed: {self.fan_speed_rpm} RPM ({self.fan_speed}%)"
+        else:
+            fan_info = "Fan: N/A (Fanless GPU)"
+        return f"Power Usage: {self.power_usage}W Temperature: {self.temperature}°C {fan_info}"
 
 
 class NvidiaGPU:
@@ -65,8 +69,16 @@ class NvidiaGPU:
             utilization = pynvml.nvmlDeviceGetUtilizationRates(handle).gpu
             mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
             temperature = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
-            fan_speed = pynvml.nvmlDeviceGetFanSpeed(handle)
-            fan_speed_rpm = pynvml.nvmlDeviceGetFanSpeedRPM(handle)
+
+            try:
+                fan_speed = pynvml.nvmlDeviceGetFanSpeed(handle)
+            except pynvml.NVMLError:
+                fan_speed = None
+            try:
+                fan_speed_rpm = pynvml.nvmlDeviceGetFanSpeedRPM(handle)
+            except pynvml.NVMLError:
+                fan_speed_rpm = None
+
             power_usage = round(pynvml.nvmlDeviceGetPowerUsage(handle) / 1000, 1)  # function return mW.
             mem_used = mem_info.used / (1024 ** 2)
             mem_total = mem_info.total / (1024 ** 2)
