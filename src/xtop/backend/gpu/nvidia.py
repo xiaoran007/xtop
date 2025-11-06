@@ -34,7 +34,10 @@ class GPUStats:
         return f"Utilization: {self.utilization}% Memory Used: {self.memory_used:.2f}MB / {self.memory_total:.2f}MB"
 
     def getPower(self):
-        fan_info = f"Fan Speed: {self.fan_speed_rpm} RPM ({self.fan_speed}%)" if self.fan_speed is not None else "Fan: N/A (Fanless GPU)"
+        if self.fan_speed is not None and self.fan_speed_rpm is not None:
+            fan_info = f"Fan Speed: {self.fan_speed_rpm} RPM ({self.fan_speed}%)"
+        else:
+            fan_info = "Fan: N/A (Fanless GPU)"
         return f"Power Usage: {self.power_usage}W Temperature: {self.temperature}°C {fan_info}"
 
 
