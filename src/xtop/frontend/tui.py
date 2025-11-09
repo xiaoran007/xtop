@@ -140,6 +140,10 @@ def create_btop_net_graph(values: deque, width: int, height: int = 10, max_value
             normalized = min(val / max_value, 1.0)
             bar_height = normalized * height
             
+            # Add baseline: ensure minimum 1 block height for visibility (even at 0%)
+            if bar_height < 1.0 and val >= 0:
+                bar_height = 1.0
+            
             # Determine what character to show at this row
             if bar_height > row_from_bottom + 1:
                 # Full block
