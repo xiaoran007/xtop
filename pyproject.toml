@@ -16,7 +16,9 @@ requires-python = ">=3.9"
 dependencies = [
     "pypci-ng>=0.2.6",
     "nvidia-ml-py",
-    "windows-curses ; platform_system == 'Windows'"
+    "windows-curses; platform_system == 'Windows'",
+    "textual",
+    "rich",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
