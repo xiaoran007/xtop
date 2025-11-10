@@ -185,7 +185,7 @@ class GPUStatsWidget(Static):
         mem_used = self.gpu_stats.memory_used or 0
         mem_total = self.gpu_stats.memory_total or 1
         mem_percent = mem_used / mem_total * 100
-        mem_label = Text(f"┃ Memory: {mem_used:.0f} /。{mem_total:.0f}MB ({mem_percent:.1f}%)", style="cyan")
+        mem_label = Text(f"┃ Memory: {mem_used:.0f}MB / {mem_total:.0f}MB ({mem_percent:.1f}%)", style="cyan")
         
         power_temp_label = Text(f"┃ Power: {self.gpu_stats.power_usage or 0}W | Temp: {self.gpu_stats.temperature or 0}°C", style="cyan")
         
