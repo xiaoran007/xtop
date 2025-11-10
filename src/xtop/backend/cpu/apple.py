@@ -41,8 +41,8 @@ class CPUStats:
         return f"Power Usage: {self.power_usage}W Temperature: {self.temperature}°C"
 
 
-class MacOSCPU:
-    """macOS CPU monitoring class using fake data."""
+class AppleCPU:
+    """Apple CPU monitoring class using fake data."""
     
     def __init__(self):
         self.cpu_number: int = 0
