@@ -7,6 +7,7 @@ from enum import Enum
 from rich.console import RenderableType
 from rich.text import Text
 from textual.app import App, ComposeResult
+from textual.color import Color
 from textual.containers import VerticalScroll
 from textual.widgets import Footer, Header, Static
 
@@ -26,6 +27,17 @@ class ColorTheme(Enum):
     GPU_BLUE = "blue"
     CPU_PURPLE = "purple"
     NPU_MAGENTA = "magenta"
+
+    def get_base_color(self) -> Color:
+        """Get the base Color object for this theme."""
+        if self == ColorTheme.GPU_BLUE:
+            return Color.parse("#EC4899")  # 00FFFF
+        elif self == ColorTheme.CPU_PURPLE:
+            return Color.parse("#A855F7")  # A855F7
+        elif self == ColorTheme.NPU_MAGENTA:
+            return Color.parse("#EC4899")  # EC4899
+        else:
+            return Color.parse("#06B6D4")
 
 
 def create_graph(values: deque, width: int, height: int = 10, max_value: float = 100.0, 
@@ -76,58 +88,19 @@ def create_graph(values: deque, width: int, height: int = 10, max_value: float =
             '█',      # 8/8 - Full block
         ]
     
-    # Define gradient color schemes based on theme (bottom to top)
-    if color_theme == ColorTheme.GPU_BLUE:
-        # Blue gradient scheme (dark blue -> bright cyan -> white)
-        colors = [
-            "color(17)",   # Dark blue
-            "color(18)",   # Blue
-            "color(19)",   # Medium blue
-            "color(20)",   # Bright blue
-            "color(27)",   # Dodger blue
-            "color(33)",   # Deep sky blue
-            "color(39)",   # Light blue
-            "color(45)",   # Cyan
-            "color(51)",   # Bright cyan
-            "bright_cyan", # Very bright cyan
-            "white"        # White peak
-        ]
-    elif color_theme == ColorTheme.CPU_PURPLE:
-        # Purple/Magenta gradient scheme (dark purple -> bright magenta -> white)
-        colors = [
-            "color(53)",   # Dark purple
-            "color(54)",   # Purple
-            "color(55)",   # Medium purple
-            "color(92)",   # Deep purple
-            "color(93)",   # Light purple
-            "color(99)",   # Purple violet
-            "color(129)",  # Magenta purple
-            "color(165)",  # Magenta
-            "color(171)",  # Orchid
-            "bright_magenta", # Bright magenta
-            "white"        # White peak
-        ]
-    elif color_theme == ColorTheme.NPU_MAGENTA:
-        # Purple to magenta gradient
-        colors = [
-            "color(53)",
-            "color(54)",
-            "color(92)",
-            "color(93)",
-            "color(129)",
-            "magenta",
-            "color(165)",
-            "color(171)",
-            "bright_magenta",
-            "white"
-        ]
-    else:
-        # Fallback to cyan gradient
-        colors = ["cyan"] * (height + 1)
+    # Generate gradient colors by adjusting brightness of base color
+    base_color = color_theme.get_base_color()
+    colors = []
     
-    # Ensure we have enough colors for the height
-    while len(colors) < height + 1:
-        colors.append(colors[-1])
+    # Create gradient from darker to lighter (bottom to top of graph)
+    # Using brightness range from 0.5 to 0.85 for good visibility in both themes
+    num_colors = height + 1
+    for i in range(num_colors):
+        # Brightness decreases from bottom (0.85) to top (0.5)
+        brightness_ratio = 0.85 - (0.35 * i / max(num_colors - 1, 1))
+        # Use darken/lighten to adjust brightness
+        adjusted_color = base_color.lighten(brightness_ratio - 0.5)
+        colors.append(adjusted_color.hex)
     
     # Get the most recent 'width' values (newest on the right)
     recent_values = list(values)[-width:]
