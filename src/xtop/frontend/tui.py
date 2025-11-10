@@ -1,9 +1,8 @@
 """
 A modern TUI for xtop using Textual.
 """
-import sys
 from collections import deque
-from datetime import datetime
+from enum import Enum
 
 from rich.console import RenderableType
 from rich.text import Text
@@ -11,20 +10,26 @@ from textual.app import App, ComposeResult
 from textual.containers import VerticalScroll
 from textual.widgets import Footer, Header, Static
 
-# Add project root to path to allow imports from backend
-sys.path.append('/Users/xiaoran/Desktop/code/xtop/src')
-
 from xtop.backend.gpu.nvidia import NvidiaGPU, GPUStats
-from xtop.backend.cpu.macos import MacOSCPU, CPUStats
+from xtop.backend.cpu.apple import AppleCPU, CPUStats
+from xtop.backend.npu.intel import IntelNPU, NPUStats
 
 
-# Unicode block characters for graph drawing (btop style)
-GRAPH_CHARS_BRAILLE = ['⠀', '⡀', '⡄', '⡆', '⡇', '⣇', '⣧', '⣷', '⣿']
-GRAPH_CHARS_BLOCKS = ['⠀', '▁', '▂', '▃', '▄', '▅', '▆', '▇', '█']
-GRAPH_HEIGHT = 8  # Height of the graph in characters
+class GraphStyle(Enum):
+    """Graph rendering styles."""
+    BLOCK = "block"
+    BRAILLE = "braille"
 
 
-def create_btop_net_graph(values: deque, width: int, height: int = 10, max_value: float = 100.0, base_color: str = "cyan", style: str = "block") -> list:
+class ColorTheme(Enum):
+    """Color themes for different hardware types."""
+    GPU_BLUE = "blue"
+    CPU_PURPLE = "purple"
+    NPU_MAGENTA = "magenta"
+
+
+def create_graph(values: deque, width: int, height: int = 10, max_value: float = 100.0, 
+                color_theme: ColorTheme = ColorTheme.GPU_BLUE, style: GraphStyle = GraphStyle.BRAILLE) -> list:
     """
     Create a btop-style vertical bar graph with gradient colors.
     Bars grow upward, with newest data on the right, scrolling left over time.
@@ -34,8 +39,8 @@ def create_btop_net_graph(values: deque, width: int, height: int = 10, max_value
         width: width of the graph in characters (number of bars)
         height: height of the graph in lines (default 10)
         max_value: maximum value for scaling
-        base_color: base color name (cyan, green, etc.)
-        style: character style - "block" for ░▒▓█ or "braille" for Braille characters
+        color_theme: ColorTheme enum for gradient colors
+        style: GraphStyle enum - BLOCK for ░▒▓█ or BRAILLE for Braille characters
     
     Returns:
         list of Text objects, one per line with gradient colors
@@ -44,7 +49,7 @@ def create_btop_net_graph(values: deque, width: int, height: int = 10, max_value
         return [Text(" " * width) for _ in range(height)]
     
     # Choose character set based on style
-    if style == "braille":
+    if style == GraphStyle.BRAILLE:
         # Braille characters for smoother, more refined appearance
         CHARS = [
             ' ',      # 0/8
@@ -71,8 +76,8 @@ def create_btop_net_graph(values: deque, width: int, height: int = 10, max_value
             '█',      # 8/8 - Full block
         ]
     
-    # Define gradient color schemes based on base color (bottom to top)
-    if base_color == "cyan" or base_color == "blue":
+    # Define gradient color schemes based on theme (bottom to top)
+    if color_theme == ColorTheme.GPU_BLUE:
         # Blue gradient scheme (dark blue -> bright cyan -> white)
         colors = [
             "color(17)",   # Dark blue
@@ -87,7 +92,7 @@ def create_btop_net_graph(values: deque, width: int, height: int = 10, max_value
             "bright_cyan", # Very bright cyan
             "white"        # White peak
         ]
-    elif base_color == "green":
+    elif color_theme == ColorTheme.CPU_PURPLE:
         # Purple/Magenta gradient scheme (dark purple -> bright magenta -> white)
         colors = [
             "color(53)",   # Dark purple
@@ -102,7 +107,7 @@ def create_btop_net_graph(values: deque, width: int, height: int = 10, max_value
             "bright_magenta", # Bright magenta
             "white"        # White peak
         ]
-    elif base_color == "magenta" or base_color == "purple":
+    elif color_theme == ColorTheme.NPU_MAGENTA:
         # Purple to magenta gradient
         colors = [
             "color(53)",
@@ -117,7 +122,8 @@ def create_btop_net_graph(values: deque, width: int, height: int = 10, max_value
             "white"
         ]
     else:
-        colors = [base_color] * (height + 1)
+        # Fallback to cyan gradient
+        colors = ["cyan"] * (height + 1)
     
     # Ensure we have enough colors for the height
     while len(colors) < height + 1:
@@ -173,15 +179,15 @@ def create_btop_net_graph(values: deque, width: int, height: int = 10, max_value
 class GPUStatsWidget(Static):
     """A widget to display GPU statistics."""
 
-    def __init__(self, gpu_stats: GPUStats) -> None:
+    def __init__(self, gpu_stats: GPUStats, graph_style: GraphStyle = GraphStyle.BRAILLE) -> None:
         super().__init__()
         self.gpu_stats = gpu_stats
         self.utilization_history = deque([0.0] * 80, maxlen=80)
-        self.graph_style = "block"  # Default style
+        self.graph_style = graph_style
 
     def on_mount(self) -> None:
         """Set up a timer to update the widget."""
-        self.update_timer = self.set_interval(0.5, self.update_stats)
+        self.update_timer = self.set_interval(1.0, self.update_stats)
 
     def update_stats(self) -> None:
         """Update the statistics."""
@@ -209,9 +215,11 @@ class GPUStatsWidget(Static):
         else:
             fan_label = Text("┃ Fan: N/A", style="cyan")
         
-        # Create btop-style vertical bar graph for utilization (switchable style)
-        # width=70 means showing 70 historical data points, height=11 for better resolution
-        util_graph_lines = create_btop_net_graph(self.utilization_history, 70, 11, 100.0, "blue", self.graph_style)
+        # Create btop-style vertical bar graph with GPU blue theme
+        util_graph_lines = create_graph(
+            self.utilization_history, 70, 11, 100.0, 
+            ColorTheme.GPU_BLUE, self.graph_style
+        )
         
         # Add border to each graph line
         util_graph_display = []
@@ -241,15 +249,15 @@ class GPUStatsWidget(Static):
 class CPUStatsWidget(Static):
     """A widget to display CPU statistics."""
 
-    def __init__(self, cpu_stats: CPUStats) -> None:
+    def __init__(self, cpu_stats: CPUStats, graph_style: GraphStyle = GraphStyle.BRAILLE) -> None:
         super().__init__()
         self.cpu_stats = cpu_stats
         self.utilization_history = deque([0.0] * 80, maxlen=80)
-        self.graph_style = "block"  # Default style
+        self.graph_style = graph_style
 
     def on_mount(self) -> None:
         """Set up a timer to update the widget."""
-        self.update_timer = self.set_interval(0.5, self.update_stats)
+        self.update_timer = self.set_interval(1.0, self.update_stats)
 
     def update_stats(self) -> None:
         """Update the statistics."""
@@ -276,9 +284,11 @@ class CPUStatsWidget(Static):
         
         power_label = Text(f"┃ Power: {self.cpu_stats.power_usage or 0}W", style="green")
         
-        # Create btop-style vertical bar graph for utilization (switchable style)
-        # width=70 means showing 70 historical data points, height=11 for better resolution
-        util_graph_lines = create_btop_net_graph(self.utilization_history, 70, 11, 100.0, "green", self.graph_style)
+        # Create btop-style vertical bar graph with CPU purple theme
+        util_graph_lines = create_graph(
+            self.utilization_history, 70, 11, 100.0, 
+            ColorTheme.CPU_PURPLE, self.graph_style
+        )
         
         # Add border to each graph line
         util_graph_display = []
@@ -305,21 +315,88 @@ class CPUStatsWidget(Static):
         return Text("\n").join(result_lines)
 
 
+class NPUStatsWidget(Static):
+    """A widget to display NPU statistics."""
+
+    def __init__(self, npu_stats: NPUStats, graph_style: GraphStyle = GraphStyle.BRAILLE) -> None:
+        super().__init__()
+        self.npu_stats = npu_stats
+        self.utilization_history = deque([0.0] * 80, maxlen=80)
+        self.graph_style = graph_style
+
+    def on_mount(self) -> None:
+        """Set up a timer to update the widget."""
+        self.update_timer = self.set_interval(1.0, self.update_stats)
+
+    def update_stats(self) -> None:
+        """Update the statistics."""
+        self.utilization_history.append(self.npu_stats.utilization or 0.0)
+        self.update(self.render_stats())
+
+    def render_stats(self) -> RenderableType:
+        """Render the NPU statistics."""
+        # Title
+        title = Text.from_markup(f"[bold magenta]┃ NPU {self.npu_stats.npu_id}: {self.npu_stats.name}[/bold magenta]")
+        
+        # Stats
+        util_value = self.npu_stats.utilization or 0
+        util_label = Text(f"┃ NPU Usage: {util_value:>3}%", style="magenta")
+        
+        mem_used = self.npu_stats.memory_used or 0
+        mem_total = self.npu_stats.memory_total or 1
+        mem_percent = mem_used / mem_total * 100 if mem_total > 0 else 0
+        mem_label = Text(f"┃ Memory:    {mem_used:.0f}/{mem_total:.0f}MB ({mem_percent:.1f}%)", style="magenta")
+        
+        # Create btop-style vertical bar graph with NPU magenta theme
+        util_graph_lines = create_graph(
+            self.utilization_history, 70, 11, 100.0, 
+            ColorTheme.NPU_MAGENTA, self.graph_style
+        )
+        
+        # Add border to each graph line
+        util_graph_display = []
+        for line in util_graph_lines:
+            util_graph_display.append(Text.assemble(Text("┃ ", style="magenta"), line))
+        
+        separator = Text("┃" + "─" * 78, style="magenta")
+        
+        result_lines = [
+            separator,
+            title,
+            separator,
+            util_label,
+        ]
+        result_lines.extend(util_graph_display)
+        result_lines.extend([
+            Text("┃", style="magenta"),
+            mem_label,
+            separator
+        ])
+        
+        return Text("\n").join(result_lines)
+
+
 class XtopTUI(App):
     """A Textual app to monitor hardware stats."""
 
     BINDINGS = [
         ("q", "quit", "Quit"),
-        ("s", "toggle_style", "Toggle Style")
+        ("s", "toggle_graph_style", "Toggle Graph Style"),
+        ("ctrl+t", "toggle_dark", "Toggle Dark/Light Mode")
     ]
 
-    def __init__(self):
+    def __init__(self, enable_gpu: bool = True, enable_cpu: bool = True, enable_npu: bool = False):
         super().__init__()
-        self.gpu_backend = NvidiaGPU()
-        self.cpu_backend = MacOSCPU()
+        self.enable_gpu = enable_gpu
+        self.enable_cpu = enable_cpu
+        self.enable_npu = enable_npu
+        self.gpu_backend = NvidiaGPU() if enable_gpu else None
+        self.cpu_backend = AppleCPU() if enable_cpu else None
+        self.npu_backend = IntelNPU() if enable_npu else None
         self.has_gpu = False
         self.has_cpu = False
-        self.graph_style = "block"  # "block" or "braille"
+        self.has_npu = False
+        self.graph_style = GraphStyle.BRAILLE  # Start with braille style
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -332,35 +409,51 @@ class XtopTUI(App):
         container = self.query_one("#main-container")
         has_any_hardware = False
 
-        # Try to initialize CPU
-        try:
-            self.cpu_backend.init()
-            self.has_cpu = self.cpu_backend.cpu_number > 0
-        except Exception as e:
-            self.has_cpu = False
+        # Try to initialize CPU (only if enabled)
+        if self.enable_cpu:
+            try:
+                self.cpu_backend.init()
+                self.has_cpu = self.cpu_backend.cpu_number > 0
+            except Exception:
+                self.has_cpu = False
 
-        # Try to initialize GPU
-        try:
-            self.gpu_backend.init()
-            self.has_gpu = self.gpu_backend.gpu_number > 0
-        except Exception as e:
-            self.has_gpu = False
+        # Try to initialize GPU (only if enabled)
+        if self.enable_gpu:
+            try:
+                self.gpu_backend.init()
+                self.has_gpu = self.gpu_backend.gpu_number > 0
+            except Exception:
+                self.has_gpu = False
+
+        # Try to initialize NPU (only if enabled)
+        if self.enable_npu:
+            try:
+                self.npu_backend.init()
+                self.has_npu = self.npu_backend.npu_number > 0
+            except Exception:
+                self.has_npu = False
 
         # Mount CPU widgets
         if self.has_cpu:
             has_any_hardware = True
             for cpu in self.cpu_backend.cpus:
-                container.mount(CPUStatsWidget(cpu))
+                container.mount(CPUStatsWidget(cpu, self.graph_style))
 
         # Mount GPU widgets
         if self.has_gpu:
             has_any_hardware = True
             for gpu in self.gpu_backend.gpus:
-                container.mount(GPUStatsWidget(gpu))
+                container.mount(GPUStatsWidget(gpu, self.graph_style))
+
+        # Mount NPU widgets
+        if self.has_npu:
+            has_any_hardware = True
+            for npu in self.npu_backend.npus:
+                container.mount(NPUStatsWidget(npu, self.graph_style))
 
         # If we have any hardware, set up update timer
         if has_any_hardware:
-            self.update_timer = self.set_interval(0.5, self.update_data)
+            self.update_timer = self.set_interval(1.0, self.update_data)
         else:
             container.mount(Static("No supported hardware found."))
 
@@ -370,14 +463,19 @@ class XtopTUI(App):
             self.cpu_backend.shutdown()
         if self.has_gpu:
             self.gpu_backend.shutdown()
+        if self.has_npu:
+            self.npu_backend.shutdown()
 
-    def action_toggle_style(self) -> None:
+    def action_toggle_graph_style(self) -> None:
         """Toggle between block and braille graph styles."""
-        self.graph_style = "braille" if self.graph_style == "block" else "block"
-        # Update all widgets to refresh with new style
+        self.graph_style = GraphStyle.BLOCK if self.graph_style == GraphStyle.BRAILLE else GraphStyle.BRAILLE
+        
+        # Update all widgets to use the new graph style
         for widget in self.query(GPUStatsWidget):
             widget.graph_style = self.graph_style
         for widget in self.query(CPUStatsWidget):
+            widget.graph_style = self.graph_style
+        for widget in self.query(NPUStatsWidget):
             widget.graph_style = self.graph_style
 
     def update_data(self) -> None:
@@ -386,6 +484,8 @@ class XtopTUI(App):
             self.cpu_backend.update()
         if self.has_gpu:
             self.gpu_backend.update()
+        if self.has_npu:
+            self.npu_backend.update()
 
 
 if __name__ == "__main__":

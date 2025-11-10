@@ -22,7 +22,22 @@ def main():
     if args.tui:
         try:
             from .frontend.tui import XtopTUI
-            app = XtopTUI()
+            # Determine what to monitor based on flags
+            enable_gpu = False
+            enable_cpu = False
+            enable_npu = False
+            
+            # If -g is specified, only monitor GPU
+            if args.gpu:
+                enable_gpu = True
+            # If -n is specified, only monitor NPU
+            elif args.npu:
+                enable_npu = True
+            # If neither is specified, monitor GPU (default)
+            else:
+                enable_gpu = True
+            
+            app = XtopTUI(enable_gpu=enable_gpu, enable_cpu=enable_cpu, enable_npu=enable_npu)
             app.run()
         except ImportError as e:
             print(e)
