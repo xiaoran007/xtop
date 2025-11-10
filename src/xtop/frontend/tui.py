@@ -160,7 +160,7 @@ class GPUStatsWidget(Static):
 
     def on_mount(self) -> None:
         """Set up a timer to update the widget."""
-        self.update_timer = self.set_interval(1.0, self.update_stats)
+        self.update_timer = self.set_interval(0.7, self.update_stats)
 
     def update_stats(self) -> None:
         """Update the statistics."""
@@ -172,6 +172,12 @@ class GPUStatsWidget(Static):
         # Title
         title = Text.from_markup(f"[bold cyan]┃ GPU {self.gpu_stats.gpu_id}: {self.gpu_stats.name}[/bold cyan]")
         
+        # Driver and CUDA info
+        driver_info = Text(
+            f"┃ Driver: {self.gpu_stats.driver_version} | CUDA: {self.gpu_stats.cuda_version} | Compute Capability: {self.gpu_stats.cuda_cc}",
+            style="cyan"
+        )
+        
         # Stats
         util_value = self.gpu_stats.utilization or 0
         util_label = Text(f"┃ GPU Usage: {util_value:>3}%", style="cyan")
@@ -179,18 +185,20 @@ class GPUStatsWidget(Static):
         mem_used = self.gpu_stats.memory_used or 0
         mem_total = self.gpu_stats.memory_total or 1
         mem_percent = mem_used / mem_total * 100
-        mem_label = Text(f"┃ Memory:    {mem_used:.0f}/{mem_total:.0f}MB ({mem_percent:.1f}%)", style="cyan")
+        mem_label = Text(f"┃ Memory: {mem_used:.0f} /。{mem_total:.0f}MB ({mem_percent:.1f}%)", style="cyan")
         
         power_temp_label = Text(f"┃ Power: {self.gpu_stats.power_usage or 0}W | Temp: {self.gpu_stats.temperature or 0}°C", style="cyan")
         
-        if self.gpu_stats.fan_speed is not None:
+        if self.gpu_stats.fan_speed is not None and self.gpu_stats.fan_speed_rpm is not None:
+            fan_label = Text(f"┃ Fan: {self.gpu_stats.fan_speed_rpm} RPM ({self.gpu_stats.fan_speed}%)", style="cyan")
+        elif self.gpu_stats.fan_speed is not None:
             fan_label = Text(f"┃ Fan: {self.gpu_stats.fan_speed}%", style="cyan")
         else:
-            fan_label = Text("┃ Fan: N/A", style="cyan")
+            fan_label = Text("┃ Fan: N/A (Fanless GPU)", style="cyan")
         
         # Create btop-style vertical bar graph with GPU blue theme
         util_graph_lines = create_graph(
-            self.utilization_history, 70, 11, 100.0, 
+            self.utilization_history, 76, 11, 100.0, 
             ColorTheme.GPU_BLUE, self.graph_style
         )
         
@@ -204,17 +212,16 @@ class GPUStatsWidget(Static):
         result_lines = [
             separator,
             title,
+            driver_info,
             separator,
             util_label,
-        ]
-        result_lines.extend(util_graph_display)
-        result_lines.extend([
-            Text("┃", style="cyan"),
             mem_label,
             power_temp_label,
             fan_label,
-            separator
-        ])
+            Text("┃", style="cyan"),
+        ]
+        result_lines.extend(util_graph_display)
+        result_lines.append(separator)
         
         return Text("\n").join(result_lines)
 
@@ -230,7 +237,7 @@ class CPUStatsWidget(Static):
 
     def on_mount(self) -> None:
         """Set up a timer to update the widget."""
-        self.update_timer = self.set_interval(1.0, self.update_stats)
+        self.update_timer = self.set_interval(0.7, self.update_stats)
 
     def update_stats(self) -> None:
         """Update the statistics."""
@@ -275,15 +282,13 @@ class CPUStatsWidget(Static):
             title,
             separator,
             util_label,
-        ]
-        result_lines.extend(util_graph_display)
-        result_lines.extend([
-            Text("┃", style="green"),
             freq_label,
             temp_label,
             power_label,
-            separator
-        ])
+            Text("┃", style="green"),
+        ]
+        result_lines.extend(util_graph_display)
+        result_lines.append(separator)
         
         return Text("\n").join(result_lines)
 
@@ -299,7 +304,7 @@ class NPUStatsWidget(Static):
 
     def on_mount(self) -> None:
         """Set up a timer to update the widget."""
-        self.update_timer = self.set_interval(1.0, self.update_stats)
+        self.update_timer = self.set_interval(0.7, self.update_stats)
 
     def update_stats(self) -> None:
         """Update the statistics."""
@@ -338,13 +343,11 @@ class NPUStatsWidget(Static):
             title,
             separator,
             util_label,
+            mem_label,
+            Text("┃", style="magenta"),
         ]
         result_lines.extend(util_graph_display)
-        result_lines.extend([
-            Text("┃", style="magenta"),
-            mem_label,
-            separator
-        ])
+        result_lines.append(separator)
         
         return Text("\n").join(result_lines)
 
@@ -426,7 +429,7 @@ class XtopTUI(App):
 
         # If we have any hardware, set up update timer
         if has_any_hardware:
-            self.update_timer = self.set_interval(1.0, self.update_data)
+            self.update_timer = self.set_interval(0.7, self.update_data)
         else:
             container.mount(Static("No supported hardware found."))
 
