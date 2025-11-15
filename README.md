@@ -8,7 +8,7 @@
 ![Static Badge](https://img.shields.io/badge/Windows-green)
 
 
-xtop, a command line xpu hardware monitoring tool that supports CPU, GPU, and NPU. **Currently,  this project is still in the initial stage, only Nvidia GPU and Intel NPU are supported on Linux and Windows System**
+xtop, a command line xpu hardware monitoring tool that supports CPU, GPU, and NPU.
 
 ![demo](https://files.catbox.moe/fb9ryz.jpg)
 
@@ -82,7 +82,7 @@ xtop -n -l
 ```
 Or use -g flag to open GPU:
 ```shell
-xtop -g
+xtop -g -t
 ```
 For more command line flags, see:
 ```shell
@@ -96,16 +96,21 @@ More functionalities are under development.
 ## 3. Supported (Tested) OS
 * Linux
 * Windows (Only GPU)
+* **NVIDIA Jetson** devices (Linux-based)
+
+## 4. Supported Hardware
+* **GPU**: NVIDIA GPUs (via NVML), NVIDIA Jetson devices (direct sysfs)
+* **NPU**: Intel NPUs
 
 
-## 4. Build from source
-### 4.1 Build tools
+## 5. Build from source
+### 5.1 Build tools
 Make sure the following Python build tools are already installed.
 * setuptools
 * build
 * twine
 
-### 4.2 Build package
+### 5.2 Build package
 clone the project, and run:
 ```shell
 python -m build
