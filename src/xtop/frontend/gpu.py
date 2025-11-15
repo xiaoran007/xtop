@@ -1,6 +1,7 @@
 import curses
 import time
 from ..backend.gpu import NvidiaGPU
+from ..backend.gpu import JetsonGPU
 import os
 import math
 import dataclasses
@@ -97,4 +98,70 @@ def GPU_UI(stdscr, enable_log=False):
         time.sleep(0.5)
 
     nvidia_obj.shutdown()
+
+
+def GPU_UI_Jetson(stdscr, enable_log=False):
+    curses.curs_set(0)
+    stdscr.nodelay(True)
+    stdscr.timeout(500)
+
+    if enable_log:
+        message = "xtop Terminal UI For Jetson GPU (Log Enable)"
+    else:
+        message = "xtop Terminal UI For Jetson GPU"
+
+    magic_number = int(time.time())
+
+    jetson_obj = JetsonGPU()
+    jetson_obj.init()
+    jetson_obj.update()
+
+    utilization_history = [[] for _ in range(jetson_obj.gpu_number)]
+
+    while True:
+        stdscr.clear()
+
+        height, width = stdscr.getmaxyx()
+
+        stdscr.addstr(0, 0, message)
+
+        dynamic_data = f"Time: {time.strftime('%Y/%m/%d, %H:%M:%S')}"
+        stdscr.addstr(1, 0, dynamic_data)
+
+        jetson_obj.update()
+
+        position_base = 2
+        for i in range(jetson_obj.gpu_number):
+            dTitle = jetson_obj.gpus[i].getTitle()
+            dUtilization = jetson_obj.gpus[i].getUtilization()
+            dPower = jetson_obj.gpus[i].getPower()
+            stdscr.addstr(i+position_base, 0, dTitle)
+            stdscr.addstr(i+position_base+1, 4, dUtilization)
+            stdscr.addstr(i+position_base+2, 4, dPower)
+
+            utilization_history[i].append(jetson_obj.gpus[i].utilization)
+            if len(utilization_history[i]) > len(dTitle) - 10:
+                utilization_history[i].pop(0)
+
+            draw_line_chart(stdscr, utilization_history[i], 10, width - 10, y_offset=i + position_base + 3, x_offset=4)
+
+            if enable_log:
+                dir_path = os.path.expanduser("~/xtop")
+                os.makedirs(dir_path, exist_ok=True)
+                with open(f"{dir_path}/JetsonGPU{i}_{magic_number}.csv", "a") as f:
+                    f.write(f"{time.time()}, {jetson_obj.gpus[i].utilization}\n")
+                stdscr.addstr(i + position_base + 14, 4, f"File log to {dir_path}/JetsonGPU{i}_{magic_number}.csv")
+                position_base += 15
+
+            position_base += 14
+
+        key = stdscr.getch()
+        if key == ord('q'):
+            break
+
+        stdscr.refresh()
+
+        time.sleep(0.5)
+
+    jetson_obj.shutdown()
 
