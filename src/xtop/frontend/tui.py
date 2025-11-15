@@ -12,6 +12,7 @@ from textual.containers import VerticalScroll
 from textual.widgets import Footer, Header, Static
 
 from xtop.backend.gpu.nvidia import NvidiaGPU, GPUStats
+from xtop.backend.gpu.jetson import JetsonGPU
 from xtop.backend.cpu.apple import AppleCPU, CPUStats
 from xtop.backend.npu.intel import IntelNPU, NPUStats
 
@@ -180,12 +181,12 @@ class GPUStatsWidget(Static):
         
         # Stats
         util_value = self.gpu_stats.utilization or 0
-        util_label = Text(f"┃ GPU Usage: {util_value:>3}%", style="cyan")
+        util_label = Text(f"┃ GPU Usage: {util_value:>2}%", style="cyan")
         
         mem_used = self.gpu_stats.memory_used or 0
         mem_total = self.gpu_stats.memory_total or 1
         mem_percent = mem_used / mem_total * 100
-        mem_label = Text(f"┃ Memory: {mem_used:.0f}MB / {mem_total:.0f}MB ({mem_percent:.1f}%)", style="cyan")
+        mem_label = Text(f"┃ Memory: {mem_used:.0f} MB / {mem_total:.0f} MB ({mem_percent:.1f}%)", style="cyan")
         
         power_temp_label = Text(f"┃ Power: {self.gpu_stats.power_usage or 0}W | Temp: {self.gpu_stats.temperature or 0}°C", style="cyan")
         
@@ -366,7 +367,18 @@ class XtopTUI(App):
         self.enable_gpu = enable_gpu
         self.enable_cpu = enable_cpu
         self.enable_npu = enable_npu
-        self.gpu_backend = NvidiaGPU() if enable_gpu else None
+
+        if enable_gpu:
+            try:
+                if JetsonGPU.is_jetson_device():
+                    self.gpu_backend = JetsonGPU()
+                else:
+                    self.gpu_backend = NvidiaGPU()
+            except:
+                self.gpu_backend = NvidiaGPU()
+        else:
+            self.gpu_backend = None
+            
         self.cpu_backend = AppleCPU() if enable_cpu else None
         self.npu_backend = IntelNPU() if enable_npu else None
         self.has_gpu = False
