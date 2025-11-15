@@ -1,118 +1,29 @@
-# xtop - AI Coding Agent Instructions
+# xtop AI Guide
 
-## Project Overview
-`xtop` is a cross-platform (Linux/Windows) command-line hardware monitoring tool for XPUs (CPU, GPU, NPU). Built with Python and distributed via pip/pipx to avoid requiring admin privileges for installation. Currently supports Nvidia GPU and Intel NPU monitoring.
-
-**Key Design Philosophy**: Python-based tool installable via pip to bypass system package managers and admin requirements—solving the friction of deploying monitoring tools in restricted environments.
+## Quick facts
+- CLI entry `src/xtop/__main__.py` exposes `xtop -g|-n|-t|-l`; it defaults to the GPU curses view unless `-t` (Textual UI) is provided and only runs on linux/windows/macos via `xtop.xtopUtil.getOS`.
+- Package installs from `pyproject.toml` (`src/` layout) and depends on `pypci-ng`, `nvidia-ml-py`, `textual`, `rich`, plus `windows-curses` on Windows; ensure Python ≥3.9 when spawning tooling.
+- Logging writes CSV samples under `~/xtop` when `-l` is passed in curses views; keep this path stable so docs stay accurate.
 
 ## Architecture
+- Backends live in `src/xtop/backend/**`; each hardware class (e.g., `NvidiaGPU`, `IntelNPU`) implements `init()/update()/shutdown()` and stores `*Stats` holders (`GPUStats`, `NPUStats`) with helper formatters consumed by the UIs.
+- GPU monitoring wraps NVML (`pynvml`); remember to call `nvmlInit` once, reuse handles, convert mW to W, and shut down via `nvmlShutdown` in `NvidiaGPU.shutdown`.
+- Intel NPU support (`backend/npu/intel.py`) relies on `pypci` to locate devices and reads `/sys` telemetry (`npu_busy_time_us`) to compute utilization deltas—preserve `last_busy_time_*` bookkeeping when adding metrics.
+- CPU backend (`backend/cpu/apple.py`) currently emits fake data for the Textual proof-of-concept; its `CPUStats` shape defines what the TUI expects (utilization, per-core history, temp, power).
 
-### 3-Layer Design Pattern
-```
-Entry Point (__main__.py)
-    ↓
-Frontend Layer (frontend/)  ← TUI with curses
-    ↓
-Backend Layer (backend/)    ← Hardware abstraction
-```
+## Frontends
+- Legacy curses dashboards (`frontend/gpu.py`, `frontend/npu.py`) wrap their run loops in `curses.wrapper`, pre-initialize backends, refresh every 500 ms, and optionally log; they expect the backend lists (`.gpus`, `.npus`) to remain stable while updating metrics in place.
+- The modern TUI (`frontend/tui.py`) is a Textual `App` that mounts widgets per device type; widgets pull live values from shared backend instances, and periodic refresh happens via `set_interval` timers in both widgets and `XtopTUI.update_data`.
+- Graph rendering is centralized in `create_graph` with `GraphStyle`/`ColorTheme`; reuse these instead of crafting new ASCII plots.
 
-**Why this separation**: Enables adding new hardware types (AMD GPU, ARM NPU) by implementing backend interfaces without touching TUI code. Frontend focuses on visualization; backend handles platform-specific APIs.
+## Dev workflows
+- Local install for hacking: `pip install -e .` (or `pipx install .`) for CLI access; try `xtop -t -g` for the Textual UI, `xtop -g -l` for GPU logging, and `xtop -n` for the Intel NPU view (fails fast on Windows).
+- Build/release via standard tooling: `make build` → `python -m build`, `make upload` → `twine upload dist/*`, `make install` → reinstall wheel; `make clean` removes `dist/`.
+- No automated tests yet—validate changes by exercising the relevant UI (curses vs Textual) on actual hardware or by stubbing NVML/pypci calls.
+- Running GPU code requires NVML libraries present; when hardware is absent, guard imports or feature-detect in `__main__` so the CLI still prints helpful help text.
 
-### Backend Structure
-- `backend/gpu/nvidia.py`: Uses `pynvml` library for Nvidia GPU metrics
-- `backend/npu/intel.py`: Uses `pypci-ng` library + sysfs (`npu_busy_time_us`) for Intel NPU
-- Pattern: Each hardware type has a `Stats` dataclass + manager class (e.g., `NvidiaGPU`, `IntelNPU`)
-  - Manager classes implement: `init()`, `update()`, `shutdown()`
-  - Stats classes provide: `getTitle()`, formatted display methods
-
-### Frontend Pattern
-- `frontend/gpu.py` and `frontend/npu.py` implement curses-based TUIs
-- Both follow identical structure: `{DEVICE}_UI(stdscr, enable_log=False)`
-- GPU includes ASCII-art line charts for utilization history (10-row height)
-- Optional CSV logging to `~/xtop/{DEVICE}{id}_{timestamp}.csv`
-
-## Critical Dependencies
-
-### Platform-Specific
-- **Windows**: Requires `windows-curses` (Python's curses doesn't support Windows natively)
-  - Auto-installed via `pyproject.toml` conditional dependency
-- **Linux**: NPU support only (reads from `/sys/bus/pci/devices/.../npu_busy_time_us`)
-
-### Hardware Libraries
-- `pynvml`: Nvidia GPU metrics (utilization, memory, power, temperature, fan)
-- `pypci-ng>=0.2.6`: PCI device discovery for NPU (via `PCI().FindAllNPU()`)
-
-## Version Management
-**CRITICAL**: Version is defined in TWO places and must stay synchronized:
-1. `src/xtop/__init__.py` → `__version__ = "0.3.0"`
-2. `pyproject.toml` → `version = "0.3.0"`
-
-When bumping versions, update both files simultaneously.
-
-## Build & Distribution Workflow
-
-```bash
-# Build package (uses setuptools via PEP 517)
-make build         # Cleans dist/, runs `python -m build`
-
-# Install locally for testing
-make install       # Installs built wheel with --force-reinstall
-
-# Publish to PyPI
-make upload        # Uses twine (requires credentials)
-```
-
-**Entry point**: Configured in `pyproject.toml` as `xtop = "xtop.__main__:main"`
-
-## Development Patterns
-
-### Adding New Hardware Support
-1. Create `backend/{type}/{vendor}.py` with `{Vendor}{Type}` manager class
-2. Implement `Stats` dataclass with display methods
-3. Create `frontend/{type}.py` with `{TYPE}_UI(stdscr, enable_log)` function
-4. Add CLI flag in `__main__.py` (follow `-g`/`-n` pattern)
-5. Export from `frontend/__init__.py`
-
-### Curses UI Conventions
-- Use `stdscr.nodelay(True)` + `stdscr.timeout(500)` for non-blocking input
-- Press `q` to quit (checked via `stdscr.getch()`)
-- Refresh at 0.5s intervals (`time.sleep(0.5)`)
-- Always call hardware shutdown methods before exit
-
-### Error Handling
-- Custom exceptions in `xtopException/xtopException.py` (currently unused in code)
-- NPU fan speed: Catch `pynvml.NVMLError` for fanless GPUs
-- OS validation: Check `getOS()` returns `"linux"` or `"windows"`
-
-## Testing Environment
-
-### Manual Testing Commands
-```bash
-# GPU monitoring with logging
-xtop -g -l
-
-# NPU monitoring (Linux only)
-xtop -n
-
-# Show help
-xtop -h
-```
-
-**Note**: No automated tests exist. Validation requires actual hardware (Nvidia GPU or Intel NPU).
-
-## Common Gotchas
-
-1. **NPU Utilization Calculation**: Uses delta-based calculation from `npu_busy_time_us`
-   - First update always returns 0% (no previous timestamp)
-   - Formula: `(delta_busy_time_us / delta_timestamp_ms) / 1000`
-
-2. **GPU Line Charts**: Fixed to 10-row height, data truncated to screen width minus 10 chars
-   - History array limited by `len(dTitle) - 10`
-
-3. **Cross-Platform Curses**: Always import `curses` directly—`windows-curses` patches it automatically
-
-4. **PCI Device Paths**: Intel NPU code expects pathlib `Path` objects from `pypci-ng`
-
-## File Naming Convention
-- Use lowercase with underscores: `nvidia.py`, `xtop_util.py`
-- Package names match directory: `xtopUtil/xtopUtil.py`
+## Conventions & tips
+- Keep platform/flag logic centralized in `__main__.py` and `xtop.xtopUtil`; if you add hardware, extend flag parsing and gate unsupported OSes early with readable `print` + `sys.exit` rather than raising.
+- Follow the stats-holder pattern: update metrics inside backend `update()` and expose presentation helpers (`getTitle`, `getUtilization`, etc.) so frontends stay dumb renderers.
+- Prefer timers over threads: curses loops sleep (`time.sleep(0.5)`), Textual widgets use `set_interval`; if you must poll faster, adjust these constants instead of spawning custom loops.
+- Logging/telemetry should respect the existing `~/xtop` directory and append CSV rows of `timestamp,value` to keep downstream tooling compatible.

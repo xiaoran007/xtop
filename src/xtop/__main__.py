@@ -45,8 +45,17 @@ def main():
         return
 
     if args.gpu:
-        from .frontend import GPU_UI
-        curses.wrapper(GPU_UI, args.log)
+        try:
+            from .backend.gpu.jetson import JetsonGPU
+            if JetsonGPU.is_jetson_device():
+                from .frontend import GPU_UI_Jetson
+                curses.wrapper(GPU_UI_Jetson, args.log)
+            else:
+                from .frontend import GPU_UI
+                curses.wrapper(GPU_UI, args.log)
+        except ImportError:
+            from .frontend import GPU_UI
+            curses.wrapper(GPU_UI, args.log)
     elif args.npu:
         if getOS() == "windows":
             print("NPU is not supported on Windows.")
