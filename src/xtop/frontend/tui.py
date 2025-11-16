@@ -2,6 +2,7 @@
 A modern TUI for xtop using Textual.
 """
 from collections import deque
+from datetime import datetime
 from enum import Enum
 
 from rich.console import RenderableType
@@ -148,6 +149,20 @@ def create_graph(values: deque, width: int, height: int = 10, max_value: float =
         lines.append(Text(line_str, style=f"bold {color}"))
     
     return lines
+
+
+class TimeWidget(Static):
+    """A widget to display current time."""
+
+    def on_mount(self) -> None:
+        """Set up a timer to update the time."""
+        self.update_timer = self.set_interval(1.0, self.update_time)
+        self.update_time()
+
+    def update_time(self) -> None:
+        """Update the time display."""
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.update(Text(f"⏰ {current_time}", style="bold yellow"))
 
 
 class GPUStatsWidget(Static):
@@ -389,6 +404,7 @@ class XtopTUI(App):
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
         yield Header()
+        yield TimeWidget(id="time-widget")
         yield VerticalScroll(id="main-container")
         yield Footer()
 
