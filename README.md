@@ -54,7 +54,7 @@ For example, use -n flag to open NPU, with -l flag to enable LOG:
 ```shell
 xtop -n -l
 ```
-Or use -g flag to open GPU:
+Or use -g flag to open GPU and -t flag to enable textual TUI:
 ```shell
 xtop -g -t
 ```
