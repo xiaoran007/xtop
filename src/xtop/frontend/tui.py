@@ -4,6 +4,8 @@ A modern TUI for xtop using Textual.
 from collections import deque
 from datetime import datetime
 from enum import Enum
+import importlib
+from typing import Optional
 
 from rich.console import RenderableType
 from rich.text import Text
@@ -12,10 +14,7 @@ from textual.color import Color
 from textual.containers import VerticalScroll
 from textual.widgets import Footer, Header, Static
 
-from xtop.backend.gpu.nvidia import NvidiaGPU, GPUStats
-from xtop.backend.gpu.jetson import JetsonGPU
-from xtop.backend.cpu.apple import AppleCPU, CPUStats
-from xtop.backend.npu.intel import IntelNPU, NPUStats
+from xtop.xtopUtil import getOS
 
 
 class GraphStyle(Enum):
@@ -40,6 +39,76 @@ class ColorTheme(Enum):
             return Color.parse("#EC4899")  # EC4899
         else:
             return Color.parse("#06B6D4")
+
+
+def resolve_cpu_status_message(os_name: str) -> str:
+    """Describe the current state of CPU support."""
+    if os_name == "macos":
+        return "Apple CPU monitoring is not implemented yet."
+    return "CPU monitoring is not implemented yet."
+
+
+def resolve_gpu_unavailable_message(reason: Optional[str] = None) -> str:
+    """Describe why GPU monitoring is unavailable."""
+    if reason:
+        return f"GPU monitoring is unavailable on this system: {reason}"
+    return "GPU monitoring is unavailable on this system."
+
+
+def resolve_npu_unavailable_message(reason: Optional[str] = None) -> str:
+    """Describe why NPU monitoring is unavailable."""
+    if reason:
+        return f"NPU monitoring is unavailable on this system: {reason}"
+    return "NPU monitoring is unavailable on this system."
+
+
+def build_status_messages(
+    os_name: str,
+    *,
+    enable_gpu: bool,
+    enable_cpu: bool,
+    enable_npu: bool,
+    gpu_error: Optional[str] = None,
+    npu_error: Optional[str] = None,
+) -> list[str]:
+    """Collect user-facing status messages for requested monitors."""
+    messages = []
+    if enable_cpu:
+        messages.append(resolve_cpu_status_message(os_name))
+    if enable_gpu and gpu_error:
+        messages.append(resolve_gpu_unavailable_message(gpu_error))
+    if enable_npu and npu_error:
+        messages.append(resolve_npu_unavailable_message(npu_error))
+    return messages
+
+
+def load_gpu_backend():
+    """Load the GPU backend lazily, preferring Jetson when applicable."""
+    try:
+        jetson_module = importlib.import_module("xtop.backend.gpu.jetson")
+        if jetson_module.JetsonGPU.is_jetson_device():
+            return jetson_module.JetsonGPU(), None
+    except Exception:
+        pass
+
+    try:
+        nvidia_module = importlib.import_module("xtop.backend.gpu.nvidia")
+        return nvidia_module.NvidiaGPU(), None
+    except ImportError as exc:
+        return None, str(exc)
+    except Exception:
+        return None, "backend could not be loaded"
+
+
+def load_npu_backend():
+    """Load the Intel NPU backend lazily."""
+    try:
+        npu_module = importlib.import_module("xtop.backend.npu.intel")
+        return npu_module.IntelNPU(), None
+    except ImportError as exc:
+        return None, str(exc)
+    except Exception:
+        return None, "backend could not be loaded"
 
 
 def create_graph(values: deque, width: int, height: int = 10, max_value: float = 100.0, 
@@ -165,10 +234,23 @@ class TimeWidget(Static):
         self.update(Text(f"⏰ {current_time}", style="bold yellow"))
 
 
+class StatusWidget(Static):
+    """A widget to display startup and availability messages."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__()
+        self.message = message
+
+    def render(self) -> RenderableType:
+        separator = Text("┃" + "─" * 78, style="yellow")
+        body = Text(f"┃ {self.message}", style="yellow")
+        return Text("\n").join([separator, body, separator])
+
+
 class GPUStatsWidget(Static):
     """A widget to display GPU statistics."""
 
-    def __init__(self, gpu_stats: GPUStats, graph_style: GraphStyle = GraphStyle.BRAILLE) -> None:
+    def __init__(self, gpu_stats, graph_style: GraphStyle = GraphStyle.BRAILLE) -> None:
         super().__init__()
         self.gpu_stats = gpu_stats
         self.utilization_history = deque([0.0] * 80, maxlen=80)
@@ -245,7 +327,7 @@ class GPUStatsWidget(Static):
 class CPUStatsWidget(Static):
     """A widget to display CPU statistics."""
 
-    def __init__(self, cpu_stats: CPUStats, graph_style: GraphStyle = GraphStyle.BRAILLE) -> None:
+    def __init__(self, cpu_stats, graph_style: GraphStyle = GraphStyle.BRAILLE) -> None:
         super().__init__()
         self.cpu_stats = cpu_stats
         self.utilization_history = deque([0.0] * 80, maxlen=80)
@@ -312,7 +394,7 @@ class CPUStatsWidget(Static):
 class NPUStatsWidget(Static):
     """A widget to display NPU statistics."""
 
-    def __init__(self, npu_stats: NPUStats, graph_style: GraphStyle = GraphStyle.BRAILLE) -> None:
+    def __init__(self, npu_stats, graph_style: GraphStyle = GraphStyle.BRAILLE) -> None:
         super().__init__()
         self.npu_stats = npu_stats
         self.utilization_history = deque([0.0] * 80, maxlen=80)
@@ -379,23 +461,37 @@ class XtopTUI(App):
 
     def __init__(self, enable_gpu: bool = True, enable_cpu: bool = True, enable_npu: bool = False):
         super().__init__()
+        self.os_name = getOS()
         self.enable_gpu = enable_gpu
         self.enable_cpu = enable_cpu
         self.enable_npu = enable_npu
+        self.status_messages = []
+
+        gpu_error = None
+        npu_error = None
 
         if enable_gpu:
-            try:
-                if JetsonGPU.is_jetson_device():
-                    self.gpu_backend = JetsonGPU()
-                else:
-                    self.gpu_backend = NvidiaGPU()
-            except:
-                self.gpu_backend = NvidiaGPU()
+            self.gpu_backend, gpu_error = load_gpu_backend()
         else:
             self.gpu_backend = None
-            
-        self.cpu_backend = AppleCPU() if enable_cpu else None
-        self.npu_backend = IntelNPU() if enable_npu else None
+
+        self.cpu_backend = None
+
+        if enable_npu:
+            self.npu_backend, npu_error = load_npu_backend()
+        else:
+            self.npu_backend = None
+
+        self.status_messages.extend(
+            build_status_messages(
+                self.os_name,
+                enable_gpu=enable_gpu,
+                enable_cpu=enable_cpu,
+                enable_npu=enable_npu,
+                gpu_error=gpu_error,
+                npu_error=npu_error,
+            )
+        )
         self.has_gpu = False
         self.has_cpu = False
         self.has_npu = False
@@ -415,27 +511,33 @@ class XtopTUI(App):
 
         # Try to initialize CPU (only if enabled)
         if self.enable_cpu:
-            try:
-                self.cpu_backend.init()
-                self.has_cpu = self.cpu_backend.cpu_number > 0
-            except Exception:
-                self.has_cpu = False
+            self.has_cpu = False
 
         # Try to initialize GPU (only if enabled)
-        if self.enable_gpu:
+        if self.enable_gpu and self.gpu_backend is not None:
+            gpu_init_failed = False
             try:
                 self.gpu_backend.init()
                 self.has_gpu = self.gpu_backend.gpu_number > 0
             except Exception:
                 self.has_gpu = False
+                gpu_init_failed = True
+                self.status_messages.append(resolve_gpu_unavailable_message())
+            if not gpu_init_failed and not self.has_gpu:
+                self.status_messages.append("GPU monitoring requested, but no supported GPU was detected.")
 
         # Try to initialize NPU (only if enabled)
-        if self.enable_npu:
+        if self.enable_npu and self.npu_backend is not None:
+            npu_init_failed = False
             try:
                 self.npu_backend.init()
                 self.has_npu = self.npu_backend.npu_number > 0
             except Exception:
                 self.has_npu = False
+                npu_init_failed = True
+                self.status_messages.append(resolve_npu_unavailable_message())
+            if not npu_init_failed and not self.has_npu:
+                self.status_messages.append("NPU monitoring requested, but no supported Intel NPU was detected.")
 
         # Mount CPU widgets
         if self.has_cpu:
@@ -455,11 +557,14 @@ class XtopTUI(App):
             for npu in self.npu_backend.npus:
                 container.mount(NPUStatsWidget(npu, self.graph_style))
 
+        for message in dict.fromkeys(self.status_messages):
+            container.mount(StatusWidget(message))
+
         # If we have any hardware, set up update timer
         if has_any_hardware:
             self.update_timer = self.set_interval(0.7, self.update_data)
-        else:
-            container.mount(Static("No supported hardware found."))
+        elif not self.status_messages:
+            container.mount(StatusWidget("No requested hardware monitors are available."))
 
     def on_unmount(self) -> None:
         """Called when the app is unmounted."""

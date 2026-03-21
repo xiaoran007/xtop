@@ -1,10 +1,8 @@
 import curses
-import time
-from ..backend.gpu import NvidiaGPU
-from ..backend.gpu import JetsonGPU
-import os
-import math
 import dataclasses
+import math
+import os
+import time
 
 
 # Place holder
@@ -35,6 +33,8 @@ def draw_line_chart2(stdscr, data, max_height, max_width, y_offset=0, x_offset=0
 
 
 def GPU_UI(stdscr, enable_log=False):
+    from ..backend.gpu.nvidia import NvidiaGPU
+
     curses.curs_set(0)
     stdscr.nodelay(True)
     stdscr.timeout(500)
@@ -101,6 +101,8 @@ def GPU_UI(stdscr, enable_log=False):
 
 
 def GPU_UI_Jetson(stdscr, enable_log=False):
+    from ..backend.gpu.jetson import JetsonGPU
+
     curses.curs_set(0)
     stdscr.nodelay(True)
     stdscr.timeout(500)
@@ -164,4 +166,3 @@ def GPU_UI_Jetson(stdscr, enable_log=False):
         time.sleep(0.5)
 
     jetson_obj.shutdown()
-
