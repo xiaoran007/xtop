@@ -58,6 +58,12 @@ Or use -g flag to open GPU and -t flag to enable textual TUI:
 ```shell
 xtop -g -t
 ```
+Or launch the Textual TUI with platform-aware defaults:
+```shell
+xtop --tui
+```
+The Textual UI loads hardware backends lazily, so a missing GPU or NPU dependency will not block unrelated startup paths.
+
 For more command line flags, see:
 ```shell
 xtop -h
@@ -71,7 +77,7 @@ More functionalities are under development.
 * Linux (GPU and Intel NPU)
 * Windows (Only Nvidia GPU)
 * **NVIDIA Jetson** devices (Linux-based)
-* Apple Silicon Devices
+* Apple Silicon Devices (application startup supported; CPU telemetry pending)
 
 ## 4. Supported Hardware
 * **GPU**: NVIDIA GPUs (via NVML), NVIDIA Jetson devices (direct sysfs for JetPack 6 and older, NVML for JetPack 7 and newer)

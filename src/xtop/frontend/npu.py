@@ -1,10 +1,11 @@
 import curses
-import time
-from ..backend.npu import IntelNPU
 import os
+import time
 
 
 def NPU_UI(stdscr, enable_log=False):
+    from ..backend.npu.intel import IntelNPU
+
     curses.curs_set(0)
     stdscr.nodelay(True)
     stdscr.timeout(500)
@@ -55,6 +56,5 @@ def NPU_UI(stdscr, enable_log=False):
         time.sleep(0.5)
 
     intel_obj.shutdown()
-
 
 
