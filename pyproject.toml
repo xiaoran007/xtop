@@ -16,6 +16,7 @@ requires-python = ">=3.9"
 dependencies = [
     "pypci-ng>=0.2.6",
     "nvidia-ml-py",
+    "psutil",
     "windows-curses; platform_system == 'Windows'",
     "textual",
     "rich",
