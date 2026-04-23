@@ -63,6 +63,11 @@ Or launch the Textual TUI with platform-aware defaults:
 xtop --tui
 ```
 The Textual UI loads hardware backends lazily, so a missing GPU or NPU dependency will not block unrelated startup paths.
+On Linux and Windows with Nvidia GPUs, the Textual TUI now prioritizes the main deep-learning workflow:
+
+* current-user GPU processes
+* GPU clocks, P-State and PCIe throughput
+* terminal-size-aware layout that compresses or expands sections automatically
 
 For more command line flags, see:
 ```shell
@@ -82,6 +87,13 @@ More functionalities are under development.
 ## 4. Supported Hardware
 * **GPU**: NVIDIA GPUs (via NVML), NVIDIA Jetson devices (direct sysfs for JetPack 6 and older, NVML for JetPack 7 and newer)
 * **NPU**: Intel NPUs
+
+### 4.1 Nvidia Textual TUI focus
+The main Textual TUI path is currently optimized around **Linux / Windows + Nvidia GPU** monitoring. In that path, xtop focuses on:
+
+* device-level status such as utilization, memory, power, temperature, clocks and PCIe throughput
+* current-user GPU process visibility for training and inference workloads
+* responsive layouts that adapt to narrow and wide terminals
 
 
 ## 5. Build from source
