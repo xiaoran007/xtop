@@ -360,6 +360,21 @@ def build_process_lines(processes, layout: GPUWidgetLayout) -> list[str]:
     return lines
 
 
+def resolve_terminal_height(widget, fallback: int = 28) -> int:
+    """Prefer viewport height over the widget's transient auto-layout height."""
+    size = getattr(widget, "size", None)
+    screen_size = getattr(getattr(widget, "screen", None), "size", None)
+    app_size = getattr(getattr(widget, "app", None), "size", None)
+
+    candidates = [
+        getattr(size, "height", 0) or 0,
+        getattr(screen_size, "height", 0) or 0,
+        getattr(app_size, "height", 0) or 0,
+        fallback,
+    ]
+    return max(candidates)
+
+
 class TimeWidget(Static):
     """A widget to display current time."""
 
@@ -409,7 +424,7 @@ class GPUStatsWidget(Static):
         """Render the GPU statistics."""
         size = getattr(self, "size", None)
         width = getattr(size, "width", 84) or 84
-        height = getattr(size, "height", 28) or 28
+        height = resolve_terminal_height(self)
         layout = resolve_gpu_widget_layout(width, height)
         content_width = layout.content_width
 

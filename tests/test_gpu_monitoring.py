@@ -202,6 +202,41 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertIn("PCIe RX/TX", rendered)
         self.assertIn("python train.py", rendered)
 
+    def test_gpu_widget_keeps_graph_when_widget_height_is_transiently_small(self):
+        with stub_textual_and_rich():
+            tui = importlib.import_module("xtop.frontend.tui")
+
+        gpu_stats = SimpleNamespace(
+            gpu_id=0,
+            name="RTX 4090",
+            driver_version="550.54",
+            cuda_version="12.4",
+            cuda_cc="8.9",
+            utilization=50,
+            memory_used=1024,
+            memory_total=24576,
+            memory_free=23552,
+            power_usage=200.0,
+            power_limit=450.0,
+            temperature=65,
+            fan_speed=35,
+            fan_speed_rpm=1200,
+            graphics_clock_mhz=2100,
+            sm_clock_mhz=2100,
+            memory_clock_mhz=10000,
+            p_state="P2",
+            pcie_rx_kbps=512,
+            pcie_tx_kbps=512,
+            processes=[],
+        )
+
+        widget = tui.GPUStatsWidget(gpu_stats)
+        widget.size = SimpleNamespace(width=120, height=1)
+        widget.app = SimpleNamespace(size=SimpleNamespace(width=120, height=36))
+        rendered = str(widget.render_stats())
+
+        self.assertIn("⣴", rendered)
+
     def test_nvidia_process_stats_are_filtered_by_current_user(self):
         with stub_pynvml():
             nvidia = importlib.import_module("xtop.backend.gpu.nvidia")
