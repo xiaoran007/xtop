@@ -69,6 +69,13 @@ def stub_textual_and_rich():
         def __init__(self, *args, **kwargs):
             pass
 
+    class Horizontal:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def mount(self, *args, **kwargs):
+            pass
+
     class Static:
         def __init__(self, *args, **kwargs):
             pass
@@ -90,6 +97,7 @@ def stub_textual_and_rich():
     textual_app.App = App
     textual_app.ComposeResult = object
     textual_color.Color = Color
+    textual_containers.Horizontal = Horizontal
     textual_containers.VerticalScroll = VerticalScroll
     textual_widgets.Footer = Footer
     textual_widgets.Header = Header
@@ -118,8 +126,15 @@ class StartupPathTests(unittest.TestCase):
     def tearDown(self):
         for name in [
             "xtop.frontend.tui",
+            "xtop.frontend.tui_app",
+            "xtop.frontend.tui_backends",
+            "xtop.frontend.tui_graphs",
+            "xtop.frontend.tui_layout",
+            "xtop.frontend.tui_widgets",
             "xtop.frontend",
             "xtop.backend.gpu",
+            "xtop.backend.gpu.mock",
+            "xtop.backend.gpu.models",
         ]:
             sys.modules.pop(name, None)
 
@@ -128,7 +143,7 @@ class StartupPathTests(unittest.TestCase):
         backend_gpu = importlib.import_module("xtop.backend.gpu")
 
         self.assertEqual(frontend.__all__, ["GPU_UI", "GPU_UI_Jetson", "NPU_UI"])
-        self.assertEqual(backend_gpu.__all__, ["NvidiaGPU", "JetsonGPU"])
+        self.assertEqual(backend_gpu.__all__, ["NvidiaGPU", "JetsonGPU", "MockNvidiaGPU"])
         self.assertNotIn("xtop.backend.gpu.nvidia", sys.modules)
         self.assertNotIn("xtop.backend.npu.intel", sys.modules)
 
@@ -159,6 +174,27 @@ class StartupPathTests(unittest.TestCase):
             main_module.resolve_tui_targets("macos", SimpleNamespace(gpu=False, npu=True)),
             (False, False, True),
         )
+        self.assertEqual(
+            main_module.resolve_tui_targets("macos", SimpleNamespace(gpu=False, npu=False, mock_gpu=True)),
+            (True, False, False),
+        )
+
+    def test_parser_keeps_textual_default_and_legacy_flags(self):
+        main_module = importlib.import_module("xtop.__main__")
+        parser = main_module.build_arg_parser()
+
+        defaults = parser.parse_args([])
+        legacy_gpu = parser.parse_args(["--legacy", "-g", "-l"])
+        mock_gpu = parser.parse_args(["--mock-gpu"])
+        textual_alias = parser.parse_args(["--tui"])
+
+        self.assertFalse(defaults.legacy)
+        self.assertFalse(defaults.tui)
+        self.assertTrue(legacy_gpu.legacy)
+        self.assertTrue(legacy_gpu.gpu)
+        self.assertTrue(legacy_gpu.log)
+        self.assertTrue(mock_gpu.mock_gpu)
+        self.assertTrue(textual_alias.tui)
 
     def test_load_gpu_backend_prefers_jetson_without_importing_nvidia(self):
         with stub_textual_and_rich():
@@ -178,11 +214,23 @@ class StartupPathTests(unittest.TestCase):
                 raise AssertionError("Nvidia backend should not be imported for Jetson devices")
             raise ImportError(name)
 
-        with patch.object(tui.importlib, "import_module", side_effect=fake_import):
+        tui_backends = importlib.import_module("xtop.frontend.tui_backends")
+
+        with patch.object(tui_backends.importlib, "import_module", side_effect=fake_import):
             backend, error = tui.load_gpu_backend()
 
         self.assertIsInstance(backend, FakeJetsonGPU)
         self.assertIsNone(error)
+
+    def test_load_gpu_backend_can_use_mock_without_nvidia_backend(self):
+        with stub_textual_and_rich():
+            tui = importlib.import_module("xtop.frontend.tui")
+
+        backend, error = tui.load_gpu_backend(use_mock=True)
+
+        self.assertEqual(type(backend).__name__, "MockNvidiaGPU")
+        self.assertIsNone(error)
+        self.assertNotIn("xtop.backend.gpu.nvidia", sys.modules)
 
     def test_status_messages_cover_unimplemented_and_unavailable_states(self):
         with stub_textual_and_rich():

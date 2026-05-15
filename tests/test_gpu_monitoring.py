@@ -69,6 +69,13 @@ def stub_textual_and_rich():
         def __init__(self, *args, **kwargs):
             pass
 
+    class Horizontal:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def mount(self, *args, **kwargs):
+            pass
+
     class Static:
         def __init__(self, *args, **kwargs):
             pass
@@ -90,6 +97,7 @@ def stub_textual_and_rich():
     textual_app.App = App
     textual_app.ComposeResult = object
     textual_color.Color = Color
+    textual_containers.Horizontal = Horizontal
     textual_containers.VerticalScroll = VerticalScroll
     textual_widgets.Footer = Footer
     textual_widgets.Header = Header
@@ -139,7 +147,14 @@ class GPUMonitoringTests(unittest.TestCase):
     def tearDown(self):
         for name in [
             "xtop.frontend.tui",
+            "xtop.frontend.tui_app",
+            "xtop.frontend.tui_backends",
+            "xtop.frontend.tui_graphs",
+            "xtop.frontend.tui_layout",
+            "xtop.frontend.tui_widgets",
             "xtop.backend.gpu.nvidia",
+            "xtop.backend.gpu.mock",
+            "xtop.backend.gpu.models",
         ]:
             sys.modules.pop(name, None)
 
@@ -266,6 +281,22 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertEqual(current_user.name, "python")
         self.assertIn("train.py", current_user.command_summary)
         self.assertIsNone(other_user)
+
+    def test_mock_gpu_backend_updates_multi_gpu_current_user_processes(self):
+        mock = importlib.import_module("xtop.backend.gpu.mock")
+
+        backend = mock.MockNvidiaGPU(gpu_number=2)
+        backend.init()
+        backend.update()
+
+        self.assertEqual(backend.gpu_number, 2)
+        self.assertEqual(len(backend.gpus), 2)
+        for gpu in backend.gpus:
+            self.assertIsNotNone(gpu.utilization)
+            self.assertGreater(gpu.memory_total, 0)
+            self.assertGreaterEqual(len(gpu.processes), 1)
+            self.assertEqual(gpu.current_user_process_count, len(gpu.processes))
+            self.assertTrue(all(process.username == backend.current_username for process in gpu.processes))
 
 
 if __name__ == "__main__":
