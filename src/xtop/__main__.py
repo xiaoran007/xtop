@@ -8,7 +8,7 @@ from .xtopUtil import getOS
 
 def resolve_tui_targets(os_name, args):
     """Resolve which monitors the Textual TUI should request."""
-    if args.gpu:
+    if args.gpu or getattr(args, "mock_gpu", False):
         return True, False, False
     if args.npu:
         return False, False, True
@@ -22,7 +22,12 @@ def run_tui(args):
     from .frontend.tui import XtopTUI
 
     enable_gpu, enable_cpu, enable_npu = resolve_tui_targets(getOS(), args)
-    app = XtopTUI(enable_gpu=enable_gpu, enable_cpu=enable_cpu, enable_npu=enable_npu)
+    app = XtopTUI(
+        enable_gpu=enable_gpu,
+        enable_cpu=enable_cpu,
+        enable_npu=enable_npu,
+        use_mock_gpu=args.mock_gpu,
+    )
     app.run()
 
 
@@ -59,38 +64,56 @@ def run_npu_curses(enable_log):
         sys.exit(1)
 
 
-def main():
+def build_arg_parser():
+    """Build the xtop command-line parser."""
+    parser = argparse.ArgumentParser(prog="xtop", description="xpu Performance Monitor")
+    parser.add_argument("-g", "--gpu", action="store_true", help="Monitoring the GPU")
+    parser.add_argument("-n", "--npu", action="store_true", help="Monitoring the NPU (Not available on Windows)")
+    parser.add_argument("-l", "--log", action="store_true", help="Create a log file with the legacy curses UI")
+    parser.add_argument("-t", "--tui", action="store_true", help="Use the modern Textual TUI (default)")
+    parser.add_argument("--legacy", action="store_true", help="Use the legacy curses UI")
+    parser.add_argument("--mock-gpu", action="store_true", help="Use simulated Nvidia GPU data for TUI development")
+    parser.add_argument("-v", "--version", action="version", version=f"xtop version: {__version__}")
+    return parser
+
+
+def main(argv=None):
     os_name = getOS()
     if os_name not in ["linux", "windows", "macos"]:
         print(f"Only Linux, Windows, and macOS is supported for now. Current OS: {os_name}")
         return
 
-    parser = argparse.ArgumentParser(prog="xtop", description="xpu Performance Monitor")
-    parser.add_argument("-g", "--gpu", action="store_true", help="Monitoring the GPU")
-    parser.add_argument("-n", "--npu", action="store_true", help="Monitoring the NPU (Not available on Windows)")
-    parser.add_argument("-l", "--log", action="store_true", help="Create a log file (Experimental)")
-    parser.add_argument("-t", "--tui", action="store_true", help="Use the modern Textual TUI")
-    parser.add_argument("-v", "--version", action="version", version=f"xtop version: {__version__}")
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
 
-    args = parser.parse_args()
+    if args.mock_gpu and args.npu:
+        print("--mock-gpu cannot be combined with --npu.")
+        sys.exit(2)
 
-    if args.tui:
-        try:
-            run_tui(args)
-        except ImportError as e:
-            print(e)
-            sys.exit(1)
+    if args.legacy:
+        if args.mock_gpu:
+            print("--mock-gpu is only available with the Textual TUI.")
+            sys.exit(2)
+        if args.gpu:
+            run_gpu_curses(args.log)
+        elif args.npu:
+            if os_name == "windows":
+                print("NPU is not supported on Windows.")
+                sys.exit(1)
+            run_npu_curses(args.log)
+        else:
+            parser.print_help()
         return
 
-    if args.gpu:
-        run_gpu_curses(args.log)
-    elif args.npu:
-        if os_name == "windows":
-            print("NPU is not supported on Windows.")
-            sys.exit(1)
-        run_npu_curses(args.log)
-    else:
-        parser.print_help()
+    if args.log:
+        print("--log is only supported with --legacy for now.")
+        sys.exit(2)
+
+    try:
+        run_tui(args)
+    except ImportError as e:
+        print(e)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
