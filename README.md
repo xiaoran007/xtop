@@ -9,7 +9,8 @@
 ![Static Badge](https://img.shields.io/badge/Windows-green)
 
 
-xtop, a command line xpu hardware monitoring tool that supports CPU, GPU, and NPU.
+xtop is a pure user-space command-line hardware monitoring tool for CPU, GPU, and NPU devices.
+Its primary goal is to give cluster users an nvtop-like terminal experience that can be installed from a Python environment with `pip` or `pipx`, without requiring sudo or a system package manager.
 
 <!-- ![demo](https://files.catbox.moe/fb9ryz.jpg) -->
 ![demo](https://files.catbox.moe/ynikkp.png)
@@ -50,23 +51,40 @@ You can use this tool directly from the command line with the following command,
 ```shell
 xtop [Options]
 ```
-For example, use -n flag to open NPU, with -l flag to enable LOG:
+For example, use `-n` to open the NPU view:
 ```shell
-xtop -n -l
+xtop -n
 ```
-Or use -g flag to open GPU and -t flag to enable textual TUI:
+Use the default Textual TUI:
 ```shell
-xtop -g -t
+xtop
 ```
-Or launch the Textual TUI with platform-aware defaults:
+Use the GPU view explicitly:
+```shell
+xtop -g
+```
+`--tui` is still accepted as a compatibility alias for the default interface:
 ```shell
 xtop --tui
 ```
+Use the legacy curses UI explicitly:
+```shell
+xtop --legacy -g
+```
+Enable legacy CSV logging:
+```shell
+xtop --legacy -g --log
+```
+Use simulated Nvidia GPU data for local UI development or demos:
+```shell
+xtop --mock-gpu
+```
 The Textual UI loads hardware backends lazily, so a missing GPU or NPU dependency will not block unrelated startup paths.
-On Linux and Windows with Nvidia GPUs, the Textual TUI now prioritizes the main deep-learning workflow:
+On Linux and Windows with Nvidia GPUs, the Textual TUI prioritizes the main deep-learning workflow:
 
 * current-user GPU processes
 * GPU clocks, P-State and PCIe throughput
+* a multi-GPU overview with selected-device details
 * terminal-size-aware layout that compresses or expands sections automatically
 
 For more command line flags, see:
@@ -89,11 +107,14 @@ More functionalities are under development.
 * **NPU**: Intel NPUs
 
 ### 4.1 Nvidia Textual TUI focus
-The main Textual TUI path is currently optimized around **Linux / Windows + Nvidia GPU** monitoring. In that path, xtop focuses on:
+The main Textual TUI path is optimized around **Linux / Windows + Nvidia GPU** monitoring in normal user space. In that path, xtop focuses on:
 
 * device-level status such as utilization, memory, power, temperature, clocks and PCIe throughput
 * current-user GPU process visibility for training and inference workloads
+* a multi-GPU overview plus selected-device details
 * responsive layouts that adapt to narrow and wide terminals
+
+The Textual UI is the default interface. The older curses UI remains available with `--legacy` for compatibility.
 
 
 ## 5. Build from source
