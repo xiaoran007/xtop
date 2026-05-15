@@ -1,7 +1,7 @@
 from importlib import import_module
 
 
-__all__ = ["NvidiaGPU", "JetsonGPU"]
+__all__ = ["NvidiaGPU", "JetsonGPU", "MockNvidiaGPU"]
 
 
 def __getattr__(name):
@@ -10,5 +10,8 @@ def __getattr__(name):
         return getattr(module, name)
     if name == "JetsonGPU":
         module = import_module("xtop.backend.gpu.jetson")
+        return getattr(module, name)
+    if name == "MockNvidiaGPU":
+        module = import_module("xtop.backend.gpu.mock")
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
