@@ -12,8 +12,9 @@
 xtop is a pure user-space command-line hardware monitoring tool for CPU, GPU, and NPU devices.
 Its primary goal is to give cluster users an nvtop-like terminal experience that can be installed from a Python environment with `pip` or `pipx`, without requiring sudo or a system package manager.
 
-<!-- ![demo](https://files.catbox.moe/fb9ryz.jpg) -->
-![demo](https://files.catbox.moe/ynikkp.png)
+<!-- ![demo](https://files.catbox.moe/fb9ryz.jpg)
+![demo](https://files.catbox.moe/ynikkp.png) -->
+![demo](https://files.catbox.moe/50g3uh.png)
 
 ## 0. Why this project
 There are many command-line based resource monitors, such as _htop_ and _nvtop_, but they are usually distributed through the system's package manager, which means that administrator privileges are required to install them. However, in most cases, asking administrators to install these programs is not a pleasant process. So a program implemented in **Python** and distributed using **pip** should be more useful (at least to me).
