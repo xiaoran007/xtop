@@ -204,7 +204,6 @@ class XtopTUI(App):
             dashboard.mount(self.gpu_middle_row)
             dashboard.mount(self.gpu_bottom_row)
             self.gpu_top_row.mount(self.gpu_history_widget)
-            self.gpu_top_row.mount(self.gpu_meter_widget)
             self.gpu_middle_row.mount(self.gpu_resource_widget)
             self.gpu_middle_row.mount(self.gpu_process_widget)
             self.gpu_bottom_row.mount(self.gpu_status_widget)
@@ -295,8 +294,8 @@ class XtopTUI(App):
             self.memory_history[selected_gpu.gpu_id],
             self.graph_style,
             layout,
+            self.gpu_backend.gpus,
         )
-        self.gpu_meter_widget.update_snapshot(self.gpu_backend.gpus, selected_gpu.gpu_id, layout)
         self.gpu_resource_widget.update_snapshot(selected_gpu, layout)
         self.gpu_process_widget.update_snapshot(selected_gpu, layout)
         self.gpu_status_widget.update_snapshot(selected_gpu, self.status_messages, layout)
@@ -320,8 +319,6 @@ class XtopTUI(App):
             self.gpu_middle_row.styles.layout = row_layout
         if self.gpu_history_widget is not None:
             self.gpu_history_widget.styles.width = layout.history_width
-        if self.gpu_meter_widget is not None:
-            self.gpu_meter_widget.styles.width = layout.meter_width
         if self.gpu_resource_widget is not None:
             self.gpu_resource_widget.styles.width = layout.resource_width
         if self.gpu_process_widget is not None:

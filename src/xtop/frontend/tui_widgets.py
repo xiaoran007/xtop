@@ -108,8 +108,8 @@ def build_separator(style: str, content_width: int) -> Text:
     return Text("├" + "─" * (content_width + 1), style=style)
 
 
-def make_box(title: str, lines: list[Text], width: int, style: str = "cyan") -> Text:
-    """Render a btop-like bordered text block."""
+def build_box_lines(title: str, lines: list[Text], width: int, style: str = "cyan") -> list[Text]:
+    """Render btop-like bordered text block lines."""
     content_width = max(width - 2, 16)
     title_label = f" {title} "
     if len(title_label) >= content_width:
@@ -139,7 +139,71 @@ def make_box(title: str, lines: list[Text], width: int, style: str = "cyan") -> 
             )
         )
     rendered.append(bottom)
+    return rendered
+
+
+def make_box(title: str, lines: list[Text], width: int, style: str = "cyan") -> Text:
+    """Render a btop-like bordered text block."""
+    rendered = build_box_lines(title, lines, width, style)
     return Text("\n").join(rendered)
+
+
+def build_meter_content_lines(gpus, selected_gpu_id, layout: GPUDashboardLayout) -> list[Text]:
+    """Render all-GPU selection rows for standalone and embedded meters."""
+    lines = [Text("gpu   util                  mem   temp    power", style=f"bold {BTOP_GREEN}")]
+    for gpu in gpus:
+        util = getattr(gpu, "utilization", 0) or 0
+        mem_percent = calculate_memory_percent(gpu)
+        temp = format_optional_number(getattr(gpu, "temperature", None), "C")
+        power_usage = getattr(gpu, "power_usage", None)
+        power = format_optional_number(power_usage, "W") if power_usage is not None else "N/A"
+        marker = "›" if gpu.gpu_id == selected_gpu_id else " "
+        row = (
+            f"{marker}{gpu.gpu_id:<3} "
+            f"{render_bar(util, layout.meter_bar_width)} {util:>3}% "
+            f"{mem_percent:>4.0f}% {temp:>5} {power:>6}"
+        )
+        lines.append(Text(row, style=f"bold {BTOP_GREEN}" if marker == "›" else BTOP_TEXT))
+        memory_row = (
+            f"    mem {render_bar(mem_percent, layout.meter_bar_width)} "
+            f"{format_memory_value(getattr(gpu, 'memory_used', 0)):>6}/"
+            f"{format_memory_value(getattr(gpu, 'memory_total', 0)):<6}"
+        )
+        lines.append(Text(memory_row, style=BTOP_YELLOW))
+    return lines
+
+
+def overlay_right_panel(
+    base_lines: list[Text],
+    overlay_lines: list[Text],
+    content_width: int,
+    gap: int = 2,
+    right_margin: int = 1,
+) -> list[Text]:
+    """Place a short right-side panel inside a wider btop-style region."""
+    if not overlay_lines:
+        return base_lines
+
+    overlay_width = max(len(str(line)) for line in overlay_lines)
+    overlay_start = max(0, content_width - overlay_width - right_margin)
+    base_width = max(0, overlay_start - gap)
+    row_count = max(len(base_lines), len(overlay_lines))
+    rendered = []
+
+    for row_index in range(row_count):
+        base_line = base_lines[row_index] if row_index < len(base_lines) else Text("")
+        overlay_line = overlay_lines[row_index] if row_index < len(overlay_lines) else None
+        base_style = getattr(base_line, "style", None) or BTOP_TEXT
+        base_text = str(base_line)[:base_width]
+
+        if overlay_line is None:
+            rendered.append(Text(f"{str(base_line):<{content_width}}", style=base_style))
+            continue
+
+        spacer = " " * max(overlay_start - len(base_text), 0)
+        rendered.append(Text.assemble(Text(base_text, style=base_style), Text(spacer), overlay_line, Text(" " * right_margin)))
+
+    return rendered
 
 
 def build_process_lines(processes, layout: GPUWidgetLayout) -> list[str]:
@@ -307,14 +371,16 @@ class GPUHistoryWidget(Static):
     def __init__(self, graph_style: GraphStyle = GraphStyle.BRAILLE) -> None:
         super().__init__(id="gpu-history")
         self.gpu_stats = None
+        self.gpus = []
         self.gpu_count = 0
         self.utilization_history = deque([0.0] * 120, maxlen=120)
         self.memory_history = deque([0.0] * 120, maxlen=120)
         self.graph_style = graph_style
         self.dashboard_layout = resolve_gpu_dashboard_layout(120, 32)
 
-    def update_snapshot(self, gpu_stats, gpu_count, utilization_history, memory_history, graph_style, layout):
+    def update_snapshot(self, gpu_stats, gpu_count, utilization_history, memory_history, graph_style, layout, gpus=None):
         self.gpu_stats = gpu_stats
+        self.gpus = list(gpus or [])
         self.gpu_count = gpu_count
         self.utilization_history = utilization_history
         self.memory_history = memory_history
@@ -328,7 +394,20 @@ class GPUHistoryWidget(Static):
 
         util_value = getattr(self.gpu_stats, "utilization", 0) or 0
         mem_percent = calculate_memory_percent(self.gpu_stats)
+        content_width = max(self.dashboard_layout.history_width - 2, 16)
         title = f"¹gpu {self.gpu_stats.gpu_id + 1}/{max(self.gpu_count, 1)}"
+        meter_overlay = []
+        if self.gpus and content_width >= 96:
+            meter_overlay = build_box_lines(
+                "meters",
+                build_meter_content_lines(self.gpus, self.gpu_stats.gpu_id, self.dashboard_layout),
+                min(self.dashboard_layout.meter_width, max(38, content_width // 2)),
+                BTOP_BORDER_GREEN,
+            )
+        overlay_width = max((len(str(line)) for line in meter_overlay), default=0)
+        graph_gap = 2 if meter_overlay else 0
+        primary_graph_width = max(content_width - overlay_width - graph_gap - 1, 24)
+        full_graph_width = content_width
         header = (
             f"{truncate_text(self.gpu_stats.name, 28)}  "
             f"util {util_value:>3}%  mem {mem_percent:>3.0f}%  "
@@ -337,7 +416,7 @@ class GPUHistoryWidget(Static):
         )
         graph_lines = create_graph(
             self.utilization_history,
-            self.dashboard_layout.graph_width,
+            primary_graph_width,
             self.dashboard_layout.history_height,
             100.0,
             ColorTheme.GPU_BLUE,
@@ -345,19 +424,22 @@ class GPUHistoryWidget(Static):
         )
         memory_lines = create_graph(
             self.memory_history,
-            self.dashboard_layout.graph_width,
+            full_graph_width,
             self.dashboard_layout.memory_graph_height,
             100.0,
             ColorTheme.GPU_YELLOW,
             self.graph_style,
         )
-        graph_label_width = max(self.dashboard_layout.history_width - 4, 16)
+        graph_label_width = primary_graph_width
+        memory_label_width = full_graph_width
         lines = [
             Text(truncate_text(header, graph_label_width), style=f"bold {BTOP_TEXT}"),
-            Text(f"utilization {render_dots(util_value, max(graph_label_width - 16, 8))} {util_value:>3}%", style=BTOP_CYAN),
+            Text(f"utilization {render_dots(util_value, max(graph_label_width - 20, 8))} {util_value:>3}%", style=BTOP_CYAN),
         ]
         lines.extend(graph_lines)
-        lines.append(Text(f"total ▴▾ gpu-totals {render_dots(mem_percent, max(graph_label_width - 27, 8))} {mem_percent:>3.0f}%", style=BTOP_MUTED))
+        if meter_overlay:
+            lines = overlay_right_panel(lines, meter_overlay, content_width)
+        lines.append(Text(f"total ▴▾ gpu-totals {render_dots(mem_percent, max(memory_label_width - 31, 8))} {mem_percent:>3.0f}%", style=BTOP_MUTED))
         lines.extend(memory_lines)
         return make_box(title, lines, self.dashboard_layout.history_width, BTOP_BORDER_GREEN)
 
@@ -378,26 +460,7 @@ class GPUMeterWidget(Static):
         self.update(self.render_meters())
 
     def render_meters(self) -> RenderableType:
-        lines = [Text("gpu   util                  mem   temp    power", style=f"bold {BTOP_GREEN}")]
-        for gpu in self.gpus:
-            util = getattr(gpu, "utilization", 0) or 0
-            mem_percent = calculate_memory_percent(gpu)
-            temp = format_optional_number(getattr(gpu, "temperature", None), "C")
-            power_usage = getattr(gpu, "power_usage", None)
-            power = format_optional_number(power_usage, "W") if power_usage is not None else "N/A"
-            marker = "›" if gpu.gpu_id == self.selected_gpu_id else " "
-            row = (
-                f"{marker}{gpu.gpu_id:<3} "
-                f"{render_bar(util, self.dashboard_layout.meter_bar_width)} {util:>3}% "
-                f"{mem_percent:>4.0f}% {temp:>5} {power:>6}"
-            )
-            lines.append(Text(row, style=f"bold {BTOP_GREEN}" if marker == "›" else BTOP_TEXT))
-            memory_row = (
-                f"    mem {render_bar(mem_percent, self.dashboard_layout.meter_bar_width)} "
-                f"{format_memory_value(getattr(gpu, 'memory_used', 0)):>6}/"
-                f"{format_memory_value(getattr(gpu, 'memory_total', 0)):<6}"
-            )
-            lines.append(Text(memory_row, style=BTOP_YELLOW))
+        lines = build_meter_content_lines(self.gpus, self.selected_gpu_id, self.dashboard_layout)
         return make_box("meters", lines, self.dashboard_layout.meter_width, BTOP_BORDER_GREEN)
 
 

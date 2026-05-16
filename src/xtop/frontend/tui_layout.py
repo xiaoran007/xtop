@@ -134,8 +134,8 @@ def resolve_gpu_dashboard_layout(width: int, height: int) -> GPUDashboardLayout:
 
     if total_width >= 160:
         mode = "wide"
-        meter_width = min(64, max(48, total_width // 3))
-        history_width = max(total_width - meter_width - 3, 72)
+        meter_width = min(62, max(50, total_width // 3))
+        history_width = total_width
         resource_width = min(max(total_width // 3, 48), 70)
         process_width = max(total_width - resource_width - 3, 52)
         show_command_summary = True
@@ -144,8 +144,8 @@ def resolve_gpu_dashboard_layout(width: int, height: int) -> GPUDashboardLayout:
         show_fan_rpm = True
     elif total_width >= 100:
         mode = "normal"
-        meter_width = min(44, max(36, total_width // 3))
-        history_width = max(total_width - meter_width - 3, 56)
+        meter_width = min(48, max(38, total_width // 3))
+        history_width = total_width
         resource_width = min(max(total_width // 3, 38), 52)
         process_width = max(total_width - resource_width - 3, 44)
         show_command_summary = total_width >= 128

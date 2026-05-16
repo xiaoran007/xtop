@@ -237,10 +237,11 @@ class GPUMonitoringTests(unittest.TestCase):
         layout = tui.resolve_gpu_dashboard_layout(180, 36)
 
         history_widget = tui.GPUHistoryWidget()
-        history_widget.update_snapshot(gpu_stats, 4, deque([25, 50, 75], maxlen=120), deque([20, 30, 40], maxlen=120), tui.GraphStyle.BRAILLE, layout)
+        history_widget.update_snapshot(gpu_stats, 4, deque([25, 50, 75], maxlen=120), deque([20, 30, 40], maxlen=120), tui.GraphStyle.BRAILLE, layout, [gpu_stats])
         history_rendered = str(history_widget.render_history())
 
         self.assertIn("gpu 1/4", history_rendered)
+        self.assertIn("meters", history_rendered)
         self.assertIn("RTX 4090", history_rendered)
 
         meter_widget = tui.GPUMeterWidget()
