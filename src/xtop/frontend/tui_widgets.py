@@ -556,7 +556,9 @@ class GPUHistoryWidget(Static):
         temperature = getattr(self.gpu_stats, "temperature", None) or 0
         chart_width = max(self.dashboard_layout.history_width - 4, 24)
         chart_height = self.dashboard_layout.history_height
-        title = f"HISTORY  Selected GPU {self.gpu_stats.gpu_id} - {truncate_text(self.gpu_stats.name, 28)}"
+        title_prefix = f"HISTORY  Selected GPU {self.gpu_stats.gpu_id} - "
+        title_name_width = max(18, min(72, self.dashboard_layout.history_width - len(title_prefix) - 4))
+        title = f"{title_prefix}{truncate_text(self.gpu_stats.name, title_name_width)}"
 
         lines = []
         lines.extend(

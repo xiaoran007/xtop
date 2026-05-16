@@ -199,6 +199,7 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertEqual(wide.mode, "wide")
         self.assertGreater(wide.graph_width, compact.graph_width)
         self.assertGreater(wide.process_width, wide.resource_width)
+        self.assertGreaterEqual(wide.detail_width, 50)
         self.assertEqual(wide.history_width + wide.detail_width, wide.overview_width)
         self.assertEqual(normal.history_width + normal.detail_width, normal.overview_width)
         self.assertEqual(compact.overview_card_count, 2)
@@ -293,6 +294,20 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertIn("TEMPERATURE", history_rendered)
         self.assertNotIn("gpu-totals", history_rendered)
         self.assertIn("RTX 4090", history_rendered)
+
+        long_name_gpu = SimpleNamespace(**{**gpu_stats.__dict__, "name": "Mock RTX 6000 48GB Max-Q Blackwell Edition"})
+        history_widget.update_snapshot(
+            long_name_gpu,
+            4,
+            deque([25, 50, 75], maxlen=120),
+            deque([12000, 18000, 24576], maxlen=120),
+            tui.GraphStyle.BRAILLE,
+            layout,
+            [long_name_gpu],
+            deque([120, 220, 320], maxlen=120),
+            deque([50, 60, 72], maxlen=120),
+        )
+        self.assertIn("48GB Max-Q", str(history_widget.render_history()))
 
         meter_widget = tui.GPUMeterWidget()
         meter_widget.update_snapshot([gpu_stats], gpu_stats.gpu_id, layout)

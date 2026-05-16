@@ -157,7 +157,7 @@ def resolve_gpu_dashboard_layout(width: int, height: int) -> GPUDashboardLayout:
     elif total_width >= 160 and total_height >= 38:
         mode = "wide"
         density = "wide"
-        detail_width = min(52, max(42, total_width // 3))
+        detail_width = min(66, max(50, int(total_width * 0.34)))
         history_width = max(total_width - detail_width, 80)
         meter_width = min(48, max(34, (total_width - 6) // 4))
         resource_width = detail_width
