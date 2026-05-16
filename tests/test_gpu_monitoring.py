@@ -2,6 +2,7 @@ import importlib
 import sys
 import types
 import unittest
+from collections import deque
 from contextlib import contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -184,16 +185,20 @@ class GPUMonitoringTests(unittest.TestCase):
             tui = importlib.import_module("xtop.frontend.tui")
 
         narrow = tui.resolve_gpu_dashboard_layout(88, 32)
+        normal = tui.resolve_gpu_dashboard_layout(128, 32)
         wide = tui.resolve_gpu_dashboard_layout(220, 32)
         same_height = tui.resolve_gpu_dashboard_layout(140, 32)
 
+        self.assertEqual(narrow.mode, "narrow")
+        self.assertEqual(normal.mode, "normal")
+        self.assertEqual(wide.mode, "wide")
         self.assertGreater(wide.graph_width, narrow.graph_width)
-        self.assertGreater(wide.right_width, wide.left_width)
+        self.assertGreater(wide.process_width, wide.resource_width)
         self.assertFalse(narrow.show_command_summary)
         self.assertTrue(wide.show_command_summary)
-        self.assertEqual(same_height.process_limit, wide.process_limit)
+        self.assertEqual(same_height.process_rows, wide.process_rows)
 
-    def test_gpu_detail_excludes_processes_and_process_panel_renders_them(self):
+    def test_btop_style_widgets_render_selected_gpu_blocks(self):
         with stub_textual_and_rich():
             tui = importlib.import_module("xtop.frontend.tui")
 
@@ -229,22 +234,43 @@ class GPUMonitoringTests(unittest.TestCase):
                 )
             ],
         )
+        layout = tui.resolve_gpu_dashboard_layout(180, 36)
 
-        widget = tui.GPUStatsWidget(gpu_stats)
-        widget.size = SimpleNamespace(width=128, height=36)
-        rendered = str(widget.render_stats())
+        history_widget = tui.GPUHistoryWidget()
+        history_widget.update_snapshot(gpu_stats, 4, deque([25, 50, 75], maxlen=120), deque([20, 30, 40], maxlen=120), tui.GraphStyle.BRAILLE, layout)
+        history_rendered = str(history_widget.render_history())
 
-        self.assertIn("Clocks GFX/SM/MEM", rendered)
-        self.assertIn("PCIe RX/TX", rendered)
-        self.assertNotIn("Processes", rendered)
-        self.assertNotIn("python train.py", rendered)
+        self.assertIn("gpu 1/4", history_rendered)
+        self.assertIn("RTX 4090", history_rendered)
+
+        meter_widget = tui.GPUMeterWidget()
+        meter_widget.update_snapshot([gpu_stats], gpu_stats.gpu_id, layout)
+        meter_rendered = str(meter_widget.render_meters())
+
+        self.assertIn("meters", meter_rendered)
+        self.assertIn("87%", meter_rendered)
+
+        resource_widget = tui.GPUResourceWidget()
+        resource_widget.update_snapshot(gpu_stats, layout)
+        resource_rendered = str(resource_widget.render_resources())
+
+        self.assertIn("mem/power", resource_rendered)
+        self.assertIn("Total", resource_rendered)
 
         process_widget = tui.GPUProcessWidget()
-        process_widget.update_snapshot(gpu_stats, tui.resolve_gpu_dashboard_layout(180, 36))
+        process_widget.update_snapshot(gpu_stats, layout)
         process_rendered = str(process_widget.render_processes())
 
-        self.assertIn("Processes", process_rendered)
+        self.assertIn("proc", process_rendered)
         self.assertIn("python train.py", process_rendered)
+
+        status_widget = tui.GPUStatusWidget()
+        status_widget.update_snapshot(gpu_stats, ["mock data"], layout)
+        status_rendered = str(status_widget.render_status())
+
+        self.assertIn("device/status", status_rendered)
+        self.assertIn("Driver 550.54", status_rendered)
+        self.assertIn("mock data", status_rendered)
 
     def test_process_panel_height_is_stable_when_process_count_changes(self):
         with stub_textual_and_rich():
@@ -263,8 +289,8 @@ class GPUMonitoringTests(unittest.TestCase):
         three_rendered = "\n".join(str(line) for line in tui.build_process_panel_lines(three_processes, layout))
 
         self.assertEqual(one_rendered.count("\n"), three_rendered.count("\n"))
-        self.assertIn("current user: 1", one_rendered)
-        self.assertIn("current user: 3", three_rendered)
+        self.assertIn("python train.py", one_rendered)
+        self.assertIn("torchrun job.py", three_rendered)
 
     def test_gpu_widget_keeps_graph_when_widget_height_is_transiently_small(self):
         with stub_textual_and_rich():
