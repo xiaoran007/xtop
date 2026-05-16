@@ -2,7 +2,6 @@ from collections import deque
 
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.widgets import Footer, Header
 
 from xtop.xtopUtil import getOS
 
@@ -33,20 +32,27 @@ class XtopTUI(App):
     CSS = """
     Screen {
         layout: vertical;
+        background: #000000;
+        color: #d7d7d7;
     }
 
     #time-widget {
         height: 1;
-        padding: 0 1;
+        padding: 0 0;
+        background: #000000;
+        color: #d7d7d7;
+        text-style: bold;
     }
 
     #main-container {
         height: 1fr;
-        padding: 0 1 1 1;
+        padding: 0 0 0 0;
+        background: #000000;
     }
 
     #gpu-dashboard {
         width: 100%;
+        background: #000000;
     }
 
     #gpu-top-row,
@@ -54,6 +60,7 @@ class XtopTUI(App):
     #gpu-bottom-row {
         width: 100%;
         height: auto;
+        background: #000000;
     }
 
     #gpu-history,
@@ -62,6 +69,8 @@ class XtopTUI(App):
     #gpu-processes,
     #gpu-status {
         width: 100%;
+        background: #000000;
+        color: #d7d7d7;
     }
     """
 
@@ -139,10 +148,8 @@ class XtopTUI(App):
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
-        yield Header()
         yield TimeWidget(id="time-widget")
         yield VerticalScroll(id="main-container")
-        yield Footer()
 
     def on_mount(self) -> None:
         """Initialize backends and mount available dashboards."""

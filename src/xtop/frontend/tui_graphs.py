@@ -16,18 +16,24 @@ class ColorTheme(Enum):
     """Color themes for different hardware types."""
 
     GPU_BLUE = "blue"
+    GPU_GREEN = "green"
+    GPU_YELLOW = "yellow"
     CPU_PURPLE = "purple"
     NPU_MAGENTA = "magenta"
 
     def get_base_color(self) -> Color:
         """Get the base Color object for this theme."""
         if self == ColorTheme.GPU_BLUE:
-            return Color.parse("#06B6D4")
+            return Color.parse("#40c4ff")
+        if self == ColorTheme.GPU_GREEN:
+            return Color.parse("#78d98b")
+        if self == ColorTheme.GPU_YELLOW:
+            return Color.parse("#d8c45a")
         if self == ColorTheme.CPU_PURPLE:
-            return Color.parse("#A855F7")
+            return Color.parse("#a78bfa")
         if self == ColorTheme.NPU_MAGENTA:
-            return Color.parse("#EC4899")
-        return Color.parse("#06B6D4")
+            return Color.parse("#ec5f8f")
+        return Color.parse("#40c4ff")
 
 
 def create_graph(
@@ -43,7 +49,7 @@ def create_graph(
         return [Text(" " * width) for _ in range(height)]
 
     if style == GraphStyle.BRAILLE:
-        chars = [" ", "⢀", "⢠", "⢰", "⢸", "⣀", "⣄", "⣤", "⣴"]
+        chars = [" ", "⠂", "⠆", "⡀", "⡄", "⣀", "⣄", "⣤", "⣴"]
     else:
         chars = [" ", "░", "░", "▒", "▒", "▓", "▓", "█", "█"]
 
