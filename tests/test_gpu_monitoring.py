@@ -305,6 +305,7 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertIn("Memory", resource_rendered)
         self.assertIn("PCIe RX", resource_rendered)
         self.assertIn("█", resource_rendered)
+        self.assertEqual(len({len(line) for line in resource_rendered.splitlines()}), 1)
 
         missing_detail_gpu = SimpleNamespace(gpu_id=2, name="Minimal GPU", processes=[])
         resource_widget.update_snapshot(missing_detail_gpu, layout)

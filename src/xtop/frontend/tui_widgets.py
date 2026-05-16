@@ -715,11 +715,12 @@ class SelectedGPUDetailPanel(Static):
         )
 
     def _bar_line(self, label: str, value: str, percent: Optional[float], color: str, show_percent: bool = True) -> Text:
-        content_width = self._content_width()
+        content_width = max(self._content_width() - 2, 22)
         label_width = 16 if "Clock" in label else 12
         percent_label = format_percent(percent) if show_percent else ""
-        value_width = max(10, min(18, content_width - label_width - len(percent_label) - 14))
-        bar_width = max(6, content_width - label_width - value_width - len(percent_label) - 3)
+        percent_width = 5 if show_percent else 0
+        value_width = max(8, min(18, content_width - label_width - percent_width - 7))
+        bar_width = max(4, content_width - label_width - value_width - percent_width - 1)
         value_text = truncate_text(value, value_width)
         bar = render_bar(percent or 0.0, bar_width)
         return Text.assemble(
@@ -730,10 +731,10 @@ class SelectedGPUDetailPanel(Static):
         )
 
     def _pcie_line(self, label: str, value: str, throughput_kbps: Optional[int], history) -> Text:
-        content_width = self._content_width()
+        content_width = max(self._content_width() - 2, 22)
         label_width = 18
         value_width = 14
-        spark_width = max(content_width - label_width - value_width - 1, 0)
+        spark_width = max(content_width - label_width - value_width, 0)
         sparkline = ""
         if throughput_kbps is not None and spark_width >= 6:
             history_values = list(history)[-spark_width:] if history is not None else [throughput_kbps]
