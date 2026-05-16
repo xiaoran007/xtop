@@ -18,8 +18,10 @@ class GPUWidgetLayout:
 @dataclass
 class GPUDashboardLayout:
     mode: str
+    density: str
     total_width: int
     total_height: int
+    too_small: bool
     history_width: int
     history_height: int
     meter_width: int
@@ -45,6 +47,12 @@ class GPUDashboardLayout:
     right_width: int
     overview_bar_width: int
     utilization_graph_height: int
+    body_width: int
+    body_height: int
+    overview_card_count: int
+    overview_compact: bool
+    compact_chart_height: int
+    compact_body_rows: int
 
 
 def truncate_text(value: str, max_width: int) -> str:
@@ -129,31 +137,14 @@ def resolve_gpu_widget_layout(width: int, height: int) -> GPUWidgetLayout:
 
 def resolve_gpu_dashboard_layout(width: int, height: int) -> GPUDashboardLayout:
     """Choose btop-style dashboard regions from the terminal size."""
-    total_width = max(width, 72)
-    total_height = max(height, 22)
+    total_width = max(width, 1)
+    total_height = max(height, 1)
+    too_small = total_width < 80 or total_height < 24
 
-    if total_width >= 160:
-        mode = "wide"
-        meter_width = min(62, max(50, total_width // 3))
-        history_width = total_width
-        resource_width = min(max(total_width // 3, 48), 70)
-        process_width = max(total_width - resource_width - 3, 52)
-        show_command_summary = True
-        show_extended_metrics = True
-        show_pcie = True
-        show_fan_rpm = True
-    elif total_width >= 100:
-        mode = "normal"
-        meter_width = min(48, max(38, total_width // 3))
-        history_width = total_width
-        resource_width = min(max(total_width // 3, 38), 52)
-        process_width = max(total_width - resource_width - 3, 44)
-        show_command_summary = total_width >= 128
-        show_extended_metrics = total_width >= 116
-        show_pcie = total_width >= 124
-        show_fan_rpm = total_width >= 112
-    else:
-        mode = "narrow"
+    if too_small:
+        mode = "too_small"
+        density = "too_small"
+        detail_width = total_width
         meter_width = total_width
         history_width = total_width
         resource_width = total_width
@@ -162,35 +153,82 @@ def resolve_gpu_dashboard_layout(width: int, height: int) -> GPUDashboardLayout:
         show_extended_metrics = False
         show_pcie = False
         show_fan_rpm = False
+        overview_card_count = 0
+    elif total_width >= 160 and total_height >= 38:
+        mode = "wide"
+        density = "wide"
+        detail_width = min(66, max(50, int(total_width * 0.34)))
+        history_width = max(total_width - detail_width, 80)
+        meter_width = min(48, max(34, (total_width - 6) // 4))
+        resource_width = detail_width
+        process_width = history_width
+        show_command_summary = True
+        show_extended_metrics = True
+        show_pcie = True
+        show_fan_rpm = True
+        overview_card_count = 4
+    elif total_width >= 120 and total_height >= 30:
+        mode = "normal"
+        density = "normal"
+        detail_width = min(42, max(34, total_width // 3))
+        history_width = max(total_width - detail_width, 56)
+        meter_width = min(40, max(30, (total_width - 4) // 3))
+        resource_width = detail_width
+        process_width = history_width
+        show_command_summary = total_width >= 128
+        show_extended_metrics = total_width >= 116
+        show_pcie = total_width >= 124
+        show_fan_rpm = total_width >= 112
+        overview_card_count = 3
+    else:
+        mode = "compact"
+        density = "compact"
+        detail_width = total_width
+        meter_width = total_width
+        history_width = total_width
+        resource_width = total_width
+        process_width = total_width
+        show_command_summary = False
+        show_extended_metrics = False
+        show_pcie = False
+        show_fan_rpm = False
+        overview_card_count = 2
 
-    if total_height >= 42:
-        history_height = 14
-        memory_graph_height = 5
-        process_rows = 10
-    elif total_height >= 34:
-        history_height = 11
+    if density == "wide":
+        history_height = 4
         memory_graph_height = 4
         process_rows = 8
-    elif total_height >= 28:
-        history_height = 9
+    elif density == "normal" and total_height >= 36:
+        history_height = 3
         memory_graph_height = 3
         process_rows = 6
-    else:
-        history_height = 7
+    elif density == "normal":
+        history_height = 3
         memory_graph_height = 3
         process_rows = 4
-
-    if mode == "narrow":
-        process_rows = max(3, min(process_rows, 5))
+    elif density == "compact":
+        history_height = 1
+        memory_graph_height = 1
+        process_rows = max(3, min(5, total_height - 16))
+    else:
+        history_height = 2
+        memory_graph_height = 2
+        process_rows = 3
 
     graph_width = max(history_width - 4, 24)
-    meter_bar_width = max(8, min(18, meter_width - 34))
-    resource_bar_width = max(10, min(32, resource_width - 24))
+    meter_bar_width = max(8, min(22, meter_width - 22))
+    resource_bar_width = max(8, min(18, resource_width - 28))
+    body_width = total_width
+    body_height = max(total_height - 2, 1)
+    compact_chart_height = 1 if density == "compact" else history_height
+    compact_body_rows = max(total_height - 10, 8) if density == "compact" else body_height
 
     return GPUDashboardLayout(
         mode=mode,
+        density=density,
         total_width=total_width,
         total_height=total_height,
+        too_small=too_small,
         history_width=history_width,
         history_height=history_height,
         meter_width=meter_width,
@@ -209,11 +247,17 @@ def resolve_gpu_dashboard_layout(width: int, height: int) -> GPUDashboardLayout:
         show_pcie=show_pcie,
         show_fan_rpm=show_fan_rpm,
         compact=mode == "narrow",
-        overview_width=meter_width,
-        detail_width=history_width,
+        overview_width=total_width,
+        detail_width=detail_width,
         graph_height=history_height,
         left_width=resource_width,
         right_width=process_width,
         overview_bar_width=meter_bar_width,
         utilization_graph_height=history_height,
+        body_width=body_width,
+        body_height=body_height,
+        overview_card_count=overview_card_count,
+        overview_compact=density == "compact",
+        compact_chart_height=compact_chart_height,
+        compact_body_rows=compact_body_rows,
     )

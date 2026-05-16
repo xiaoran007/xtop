@@ -184,19 +184,29 @@ class GPUMonitoringTests(unittest.TestCase):
         with stub_textual_and_rich():
             tui = importlib.import_module("xtop.frontend.tui")
 
-        narrow = tui.resolve_gpu_dashboard_layout(88, 32)
-        normal = tui.resolve_gpu_dashboard_layout(128, 32)
-        wide = tui.resolve_gpu_dashboard_layout(220, 32)
-        same_height = tui.resolve_gpu_dashboard_layout(140, 32)
+        compact = tui.resolve_gpu_dashboard_layout(80, 24)
+        too_small = tui.resolve_gpu_dashboard_layout(79, 23)
+        mid_compact = tui.resolve_gpu_dashboard_layout(100, 30)
+        normal = tui.resolve_gpu_dashboard_layout(120, 36)
+        wide = tui.resolve_gpu_dashboard_layout(160, 48)
+        same_height = tui.resolve_gpu_dashboard_layout(140, 36)
 
-        self.assertEqual(narrow.mode, "narrow")
+        self.assertEqual(compact.density, "compact")
+        self.assertEqual(mid_compact.density, "compact")
+        self.assertFalse(compact.too_small)
+        self.assertTrue(too_small.too_small)
         self.assertEqual(normal.mode, "normal")
         self.assertEqual(wide.mode, "wide")
-        self.assertGreater(wide.graph_width, narrow.graph_width)
+        self.assertGreater(wide.graph_width, compact.graph_width)
         self.assertGreater(wide.process_width, wide.resource_width)
-        self.assertFalse(narrow.show_command_summary)
+        self.assertGreaterEqual(wide.detail_width, 50)
+        self.assertEqual(wide.history_width + wide.detail_width, wide.overview_width)
+        self.assertEqual(normal.history_width + normal.detail_width, normal.overview_width)
+        self.assertEqual(compact.overview_card_count, 2)
+        self.assertTrue(compact.overview_compact)
+        self.assertFalse(compact.show_command_summary)
         self.assertTrue(wide.show_command_summary)
-        self.assertEqual(same_height.process_rows, wide.process_rows)
+        self.assertLessEqual(same_height.process_rows, wide.process_rows)
 
     def test_btop_style_widgets_render_selected_gpu_blocks(self):
         with stub_textual_and_rich():
@@ -225,55 +235,226 @@ class GPUMonitoringTests(unittest.TestCase):
             pcie_tx_kbps=1024,
             processes=[
                 SimpleNamespace(
-                    pid=1234,
+                    pid=1235,
                     username="alice",
                     process_type="compute",
                     name="python",
                     command_summary="python train.py --config exp.yaml",
+                    used_memory_mb=1024,
+                ),
+                SimpleNamespace(
+                    pid=1234,
+                    username="alice",
+                    process_type="compute",
+                    name="torchrun",
+                    command_summary="torchrun fit.py",
                     used_memory_mb=20480,
-                )
+                ),
             ],
         )
         layout = tui.resolve_gpu_dashboard_layout(180, 36)
 
+        header_widget = tui.TopHeaderWidget()
+        header_widget.selected_gpu = gpu_stats
+        header_widget.backend_label = "NVML"
+        header_rendered = str(header_widget.render_header("10:34:19"))
+
+        self.assertIn("GPU: 0 > RTX 4090", header_rendered)
+        self.assertIn("Backend: NVML", header_rendered)
+        self.assertIn("[1-9] Switch", header_rendered)
+
+        header_widget.dashboard_layout = tui.resolve_gpu_dashboard_layout(160, 48)
+        header_widget.selected_gpu = SimpleNamespace(**{**gpu_stats.__dict__, "name": "Mock RTX 6000 48GB Max-Q Blackwell Edition"})
+        wide_header = str(header_widget.render_header("13:29:50"))
+        self.assertIn("48GB", wide_header)
+        self.assertIn("[q] Quit", wide_header)
+        self.assertNotIn("Graph...", wide_header)
+        self.assertLessEqual(len(wide_header), 160)
+
+        overview_widget = tui.GPUOverviewWidget()
+        other_gpu = SimpleNamespace(**{**gpu_stats.__dict__, "gpu_id": 1, "utilization": 12})
+        overview_widget.update_snapshot([gpu_stats, other_gpu], gpu_stats.gpu_id, layout, {0: deque([25, 50, 75], maxlen=120), 1: deque([5, 10, 12], maxlen=120)})
+        overview_rendered = str(overview_widget.render_overview())
+
+        self.assertIn("OVERVIEW", overview_rendered)
+        self.assertIn("ACTIVE", overview_rendered)
+        self.assertIn("RTX 4090", overview_rendered)
+        self.assertIn("━", overview_rendered)
+
         history_widget = tui.GPUHistoryWidget()
-        history_widget.update_snapshot(gpu_stats, 4, deque([25, 50, 75], maxlen=120), deque([20, 30, 40], maxlen=120), tui.GraphStyle.BRAILLE, layout, [gpu_stats])
+        history_widget.update_snapshot(
+            gpu_stats,
+            4,
+            deque([25, 50, 75], maxlen=120),
+            deque([12000, 18000, 24576], maxlen=120),
+            tui.GraphStyle.BRAILLE,
+            layout,
+            [gpu_stats],
+            deque([120, 220, 320], maxlen=120),
+            deque([50, 60, 72], maxlen=120),
+        )
         history_rendered = str(history_widget.render_history())
 
-        self.assertIn("gpu 1/4", history_rendered)
-        self.assertIn("meters", history_rendered)
-        self.assertIn("memory", history_rendered)
+        self.assertIn("HISTORY", history_rendered)
+        self.assertIn("GPU UTILIZATION", history_rendered)
+        self.assertIn("MEMORY USED", history_rendered)
+        self.assertIn("POWER DRAW", history_rendered)
+        self.assertIn("TEMPERATURE", history_rendered)
         self.assertNotIn("gpu-totals", history_rendered)
         self.assertIn("RTX 4090", history_rendered)
+
+        long_name_gpu = SimpleNamespace(**{**gpu_stats.__dict__, "name": "Mock RTX 6000 48GB Max-Q Blackwell Edition"})
+        history_widget.update_snapshot(
+            long_name_gpu,
+            4,
+            deque([25, 50, 75], maxlen=120),
+            deque([12000, 18000, 24576], maxlen=120),
+            tui.GraphStyle.BRAILLE,
+            layout,
+            [long_name_gpu],
+            deque([120, 220, 320], maxlen=120),
+            deque([50, 60, 72], maxlen=120),
+        )
+        self.assertIn("48GB Max-Q", str(history_widget.render_history()))
 
         meter_widget = tui.GPUMeterWidget()
         meter_widget.update_snapshot([gpu_stats], gpu_stats.gpu_id, layout)
         meter_rendered = str(meter_widget.render_meters())
 
-        self.assertIn("meters", meter_rendered)
+        self.assertIn("OVERVIEW", meter_rendered)
         self.assertIn("87%", meter_rendered)
 
-        resource_widget = tui.GPUResourceWidget()
-        resource_widget.update_snapshot(gpu_stats, layout)
-        resource_rendered = str(resource_widget.render_resources())
+        resource_widget = tui.SelectedGPUDetailPanel()
+        resource_widget.update_snapshot(
+            gpu_stats,
+            layout,
+            deque([0, 512, 1024, 2048], maxlen=120),
+            deque([0, 256, 512, 1024], maxlen=120),
+        )
+        resource_rendered = str(resource_widget.render_detail())
 
-        self.assertIn("mem/power", resource_rendered)
-        self.assertIn("Total", resource_rendered)
+        self.assertIn("SELECTED GPU", resource_rendered)
+        self.assertIn("Memory", resource_rendered)
+        self.assertIn("PCIe RX", resource_rendered)
+        self.assertIn("█", resource_rendered)
+        self.assertEqual(len({len(line) for line in resource_rendered.splitlines()}), 1)
+
+        missing_detail_gpu = SimpleNamespace(gpu_id=2, name="Minimal GPU", processes=[])
+        resource_widget.update_snapshot(missing_detail_gpu, layout)
+        self.assertIn("n/a", str(resource_widget.render_detail()))
 
         process_widget = tui.GPUProcessWidget()
         process_widget.update_snapshot(gpu_stats, layout)
         process_rendered = str(process_widget.render_processes())
 
-        self.assertIn("proc", process_rendered)
+        self.assertIn("PROCESSES", process_rendered)
+        self.assertLess(process_rendered.index("torchrun fit.py"), process_rendered.index("python train.py"))
+        self.assertIn("n/a", process_rendered)
         self.assertIn("python train.py", process_rendered)
 
-        status_widget = tui.GPUStatusWidget()
-        status_widget.update_snapshot(gpu_stats, ["mock data"], layout)
+        status_widget = tui.StatusLineWidget()
+        status_widget.update_snapshot(gpu_stats, ["mock data"], layout, "Mock")
         status_rendered = str(status_widget.render_status())
 
-        self.assertIn("device/status", status_rendered)
+        self.assertIn("Backend: Mock", status_rendered)
         self.assertIn("Driver 550.54", status_rendered)
+        self.assertIn("CUDA 12.4", status_rendered)
         self.assertIn("mock data", status_rendered)
+
+    def test_compact_dashboard_renders_within_80_columns(self):
+        with stub_textual_and_rich():
+            tui = importlib.import_module("xtop.frontend.tui")
+
+        layout = tui.resolve_gpu_dashboard_layout(80, 24)
+        gpus = [
+            SimpleNamespace(
+                gpu_id=index,
+                name=f"Mock RTX {6000 + index * 100}",
+                utilization=10 + index * 20,
+                memory_used=8192 + index * 1024,
+                memory_total=49152,
+                power_usage=80 + index * 20,
+                power_limit=450,
+                temperature=45 + index,
+                fan_speed=30 + index,
+                fan_speed_rpm=1200 + index * 20,
+                driver_version="555.99",
+                cuda_version="12.5",
+                processes=[],
+            )
+            for index in range(4)
+        ]
+        histories = {gpu.gpu_id: deque([gpu.utilization - 5, gpu.utilization], maxlen=120) for gpu in gpus}
+
+        overview = tui.GPUOverviewWidget()
+        overview.update_snapshot(gpus, 3, layout, histories)
+        overview_rendered = str(overview.render_overview())
+        self.assertIn("Mock RTX 6300", overview_rendered)
+        self.assertLessEqual(overview_rendered.count("Mock RTX"), 2)
+        self.assertTrue(all(len(line) <= 80 for line in overview_rendered.splitlines()))
+
+        history = tui.GPUHistoryWidget()
+        selected_gpu = gpus[3]
+        history.update_snapshot(
+            selected_gpu,
+            4,
+            histories[selected_gpu.gpu_id],
+            deque([12000, 13000], maxlen=120),
+            tui.GraphStyle.BRAILLE,
+            layout,
+            gpus,
+            deque([100, 180], maxlen=120),
+            deque([50, 58], maxlen=120),
+        )
+        history_rendered = str(history.render_history())
+        self.assertIn("UTIL", history_rendered)
+        self.assertIn("MEM", history_rendered)
+        self.assertIn("PWR", history_rendered)
+        self.assertIn("TEMP", history_rendered)
+        self.assertTrue(all(len(line) <= 80 for line in history_rendered.splitlines()))
+
+        detail = tui.SelectedGPUDetailPanel()
+        detail.update_snapshot(selected_gpu, layout)
+        detail_rendered = str(detail.render_detail())
+        self.assertTrue(all(len(line) <= 80 for line in detail_rendered.splitlines()))
+
+        process_panel = tui.GPUProcessPanel()
+        selected_gpu.processes = [
+            SimpleNamespace(pid=1, username="xiaoran", name="python", command_summary="python train.py", used_memory_mb=1024)
+        ]
+        process_panel.update_snapshot(selected_gpu, layout)
+        process_rendered = str(process_panel.render_processes())
+        self.assertTrue(all(len(line) <= 80 for line in process_rendered.splitlines()))
+
+    def test_compact_app_pages_toggle_visible_body_widget(self):
+        with stub_textual_and_rich():
+            tui = importlib.import_module("xtop.frontend.tui")
+
+        class DummyWidget:
+            def __init__(self):
+                self.styles = SimpleNamespace()
+
+        app = tui.XtopTUI.__new__(tui.XtopTUI)
+        app.compact_body_page = "processes"
+        app.gpu_main_row = DummyWidget()
+        app.gpu_overview_row = DummyWidget()
+        app.gpu_status_row = DummyWidget()
+        app.gpu_left_column = DummyWidget()
+        app.gpu_overview_widget = DummyWidget()
+        app.gpu_history_widget = DummyWidget()
+        app.gpu_detail_widget = DummyWidget()
+        app.gpu_process_widget = DummyWidget()
+        app.gpu_status_widget = DummyWidget()
+
+        app._apply_dashboard_layout(tui.resolve_gpu_dashboard_layout(80, 24))
+        self.assertEqual(app.gpu_history_widget.styles.display, "none")
+        self.assertEqual(app.gpu_process_widget.styles.display, "block")
+        self.assertEqual(app.gpu_detail_widget.styles.display, "none")
+
+        app.compact_body_page = "details"
+        app._apply_dashboard_layout(tui.resolve_gpu_dashboard_layout(80, 24))
+        self.assertEqual(app.gpu_left_column.styles.display, "none")
+        self.assertEqual(app.gpu_detail_widget.styles.display, "block")
 
     def test_process_panel_height_is_stable_when_process_count_changes(self):
         with stub_textual_and_rich():
@@ -360,6 +541,31 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertIn("train.py", current_user.command_summary)
         self.assertIsNone(other_user)
 
+    def test_nvidia_optional_detail_helpers_read_nvml_fields(self):
+        with stub_pynvml() as fake_nvml:
+            nvidia = importlib.import_module("xtop.backend.gpu.nvidia")
+
+        fake_nvml.nvmlDeviceGetCurrPcieLinkGeneration = lambda handle: 4
+        fake_nvml.nvmlDeviceGetMaxPcieLinkGeneration = lambda handle: 5
+        fake_nvml.nvmlDeviceGetCurrPcieLinkWidth = lambda handle: 16
+        fake_nvml.nvmlDeviceGetMaxPcieLinkWidth = lambda handle: 16
+        fake_nvml.NVML_MEMORY_ERROR_TYPE_CORRECTED = 0
+        fake_nvml.NVML_MEMORY_ERROR_TYPE_UNCORRECTED = 1
+        fake_nvml.NVML_AGGREGATE_ECC = 0
+        fake_nvml.NVML_VOLATILE_ECC = 1
+        fake_nvml.nvmlDeviceGetTotalEccErrors = lambda handle, error_type, counter_type: 2 if error_type == 0 else 3
+        fake_nvml.nvmlClocksThrottleReasonNone = 0
+        fake_nvml.nvmlClocksThrottleReasonGpuIdle = 1
+        fake_nvml.nvmlClocksThrottleReasonSwPowerCap = 4
+        fake_nvml.nvmlDeviceGetCurrentClocksThrottleReasons = lambda handle: 5
+
+        gpu = nvidia.NvidiaGPU.__new__(nvidia.NvidiaGPU)
+
+        self.assertEqual(gpu._read_pcie_generation("handle"), "Gen4/max5")
+        self.assertEqual(gpu._read_pcie_link_width("handle"), "x16")
+        self.assertEqual(gpu._read_ecc_errors("handle"), 5)
+        self.assertEqual(gpu._read_performance_cap("handle"), "Idle, SW Power")
+
     def test_mock_gpu_backend_updates_multi_gpu_current_user_processes(self):
         mock = importlib.import_module("xtop.backend.gpu.mock")
 
@@ -372,6 +578,12 @@ class GPUMonitoringTests(unittest.TestCase):
         for gpu in backend.gpus:
             self.assertIsNotNone(gpu.utilization)
             self.assertGreater(gpu.memory_total, 0)
+            self.assertIsNotNone(gpu.uuid)
+            self.assertEqual(gpu.pcie_gen, "Gen4")
+            self.assertEqual(gpu.pcie_link_width, "x16")
+            self.assertIsNotNone(gpu.uptime)
+            self.assertEqual(gpu.ecc_errors, 0)
+            self.assertEqual(gpu.performance_cap, "None")
             self.assertGreaterEqual(len(gpu.processes), 1)
             self.assertEqual(gpu.current_user_process_count, len(gpu.processes))
             self.assertTrue(all(process.username == backend.current_username for process in gpu.processes))

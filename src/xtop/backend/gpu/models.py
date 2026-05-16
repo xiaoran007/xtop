@@ -19,6 +19,7 @@ class GPUStats:
     driver_version: str
     cuda_version: str
     cuda_cc: str
+    uuid: Optional[str] = None
     utilization: Optional[int] = None
     memory_used: Optional[float] = None
     memory_total: Optional[float] = None
@@ -34,6 +35,11 @@ class GPUStats:
     memory_clock_mhz: Optional[int] = None
     pcie_tx_kbps: Optional[int] = None
     pcie_rx_kbps: Optional[int] = None
+    pcie_gen: Optional[str] = None
+    pcie_link_width: Optional[str] = None
+    uptime: Optional[str] = None
+    ecc_errors: Optional[int] = None
+    performance_cap: Optional[str] = None
     processes: list[GPUProcessStats] = field(default_factory=list)
     current_user_process_count: int = 0
 
@@ -56,6 +62,11 @@ class GPUStats:
         pcie_tx_kbps,
         pcie_rx_kbps,
         processes,
+        pcie_gen=None,
+        pcie_link_width=None,
+        uptime=None,
+        ecc_errors=None,
+        performance_cap=None,
     ):
         self.utilization = utilization
         self.memory_used = memory_used
@@ -72,6 +83,11 @@ class GPUStats:
         self.memory_clock_mhz = memory_clock_mhz
         self.pcie_tx_kbps = pcie_tx_kbps
         self.pcie_rx_kbps = pcie_rx_kbps
+        self.pcie_gen = pcie_gen
+        self.pcie_link_width = pcie_link_width
+        self.uptime = uptime
+        self.ecc_errors = ecc_errors
+        self.performance_cap = performance_cap
         self.processes = processes
         self.current_user_process_count = len(processes)
 

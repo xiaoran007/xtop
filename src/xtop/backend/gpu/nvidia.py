@@ -1,3 +1,4 @@
+import time
 from typing import Callable, Optional
 
 import pynvml
@@ -47,7 +48,8 @@ class NvidiaGPU:
             driver_version = _decode_text(pynvml.nvmlSystemGetDriverVersion())
             cuda_version = self.__convertCudaDriverVersion(pynvml.nvmlSystemGetCudaDriverVersion())
             cuda_cc = self.__convertCudaCC(pynvml.nvmlDeviceGetCudaComputeCapability(handle))
-            gpu = GPUStats(i, name, driver_version, cuda_version, cuda_cc)
+            uuid = _read_nvml_call(None, lambda: _decode_text(pynvml.nvmlDeviceGetUUID(handle)))
+            gpu = GPUStats(i, name, driver_version, cuda_version, cuda_cc, uuid=uuid)
             self.gpus.append(gpu)
         self.start = True
 
@@ -72,6 +74,11 @@ class NvidiaGPU:
             memory_clock_mhz = self._read_clock(handle, "NVML_CLOCK_MEM")
             pcie_tx_kbps = self._read_pcie_throughput(handle, "NVML_PCIE_UTIL_TX_BYTES")
             pcie_rx_kbps = self._read_pcie_throughput(handle, "NVML_PCIE_UTIL_RX_BYTES")
+            pcie_gen = self._read_pcie_generation(handle)
+            pcie_link_width = self._read_pcie_link_width(handle)
+            uptime = self._format_system_uptime()
+            ecc_errors = self._read_ecc_errors(handle)
+            performance_cap = self._read_performance_cap(handle)
             processes = self._read_current_user_processes(handle)
 
             mem_used = mem_info.used / (1024 ** 2)
@@ -94,6 +101,11 @@ class NvidiaGPU:
                 pcie_tx_kbps=pcie_tx_kbps,
                 pcie_rx_kbps=pcie_rx_kbps,
                 processes=processes,
+                pcie_gen=pcie_gen,
+                pcie_link_width=pcie_link_width,
+                uptime=uptime,
+                ecc_errors=ecc_errors,
+                performance_cap=performance_cap,
             )
 
     def _read_clock(self, handle, constant_name: str) -> Optional[int]:
@@ -107,6 +119,91 @@ class NvidiaGPU:
         if counter is None:
             return None
         return _read_nvml_call(None, lambda: pynvml.nvmlDeviceGetPcieThroughput(handle, counter))
+
+    def _read_pcie_generation(self, handle) -> Optional[str]:
+        current_getter = getattr(pynvml, "nvmlDeviceGetCurrPcieLinkGeneration", None)
+        max_getter = getattr(pynvml, "nvmlDeviceGetMaxPcieLinkGeneration", None)
+        if current_getter is None:
+            return None
+        current = _read_nvml_call(None, lambda: current_getter(handle))
+        if current is None:
+            return None
+        maximum = _read_nvml_call(None, lambda: max_getter(handle)) if max_getter is not None else None
+        if maximum and maximum != current:
+            return f"Gen{current}/max{maximum}"
+        return f"Gen{current}"
+
+    def _read_pcie_link_width(self, handle) -> Optional[str]:
+        current_getter = getattr(pynvml, "nvmlDeviceGetCurrPcieLinkWidth", None)
+        max_getter = getattr(pynvml, "nvmlDeviceGetMaxPcieLinkWidth", None)
+        if current_getter is None:
+            return None
+        current = _read_nvml_call(None, lambda: current_getter(handle))
+        if current is None:
+            return None
+        maximum = _read_nvml_call(None, lambda: max_getter(handle)) if max_getter is not None else None
+        if maximum and maximum != current:
+            return f"x{current}/max{maximum}"
+        return f"x{current}"
+
+    def _read_ecc_errors(self, handle) -> Optional[int]:
+        getter = getattr(pynvml, "nvmlDeviceGetTotalEccErrors", None)
+        corrected = getattr(pynvml, "NVML_MEMORY_ERROR_TYPE_CORRECTED", None)
+        uncorrected = getattr(pynvml, "NVML_MEMORY_ERROR_TYPE_UNCORRECTED", None)
+        aggregate = getattr(pynvml, "NVML_AGGREGATE_ECC", None)
+        volatile = getattr(pynvml, "NVML_VOLATILE_ECC", None)
+        if getter is None or corrected is None or uncorrected is None:
+            return None
+
+        for counter_type in (aggregate, volatile):
+            if counter_type is None:
+                continue
+            corrected_count = _read_nvml_call(None, lambda counter_type=counter_type: getter(handle, corrected, counter_type))
+            uncorrected_count = _read_nvml_call(None, lambda counter_type=counter_type: getter(handle, uncorrected, counter_type))
+            if corrected_count is not None or uncorrected_count is not None:
+                return (corrected_count or 0) + (uncorrected_count or 0)
+        return None
+
+    def _read_performance_cap(self, handle) -> Optional[str]:
+        getter = getattr(pynvml, "nvmlDeviceGetCurrentClocksThrottleReasons", None)
+        if getter is None:
+            return None
+        reasons = _read_nvml_call(None, lambda: getter(handle))
+        if reasons is None:
+            return None
+
+        reason_map = (
+            ("GpuIdle", "Idle"),
+            ("ApplicationsClocksSetting", "App Clocks"),
+            ("SwPowerCap", "SW Power"),
+            ("HwSlowdown", "HW Slowdown"),
+            ("SyncBoost", "Sync Boost"),
+            ("SwThermalSlowdown", "SW Thermal"),
+            ("HwThermalSlowdown", "HW Thermal"),
+            ("HwPowerBrakeSlowdown", "HW Power Brake"),
+            ("DisplayClockSetting", "Display Clock"),
+        )
+        labels = []
+        for constant_suffix, label in reason_map:
+            bit = getattr(pynvml, f"nvmlClocksThrottleReason{constant_suffix}", None)
+            if bit is not None and reasons & bit:
+                labels.append(label)
+        if labels:
+            return ", ".join(labels)
+        none_bit = getattr(pynvml, "nvmlClocksThrottleReasonNone", None)
+        if none_bit is not None and reasons == none_bit:
+            return "None"
+        return "None" if reasons == 0 else f"0x{reasons:x}"
+
+    @staticmethod
+    def _format_system_uptime() -> str:
+        seconds = max(0, int(time.time() - psutil.boot_time()))
+        days, remainder = divmod(seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if days:
+            return f"{days}d {hours:02d}:{minutes:02d}:{seconds:02d}"
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
     def _read_current_user_processes(self, handle) -> list[GPUProcessStats]:
         processes = []

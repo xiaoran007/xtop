@@ -20,10 +20,11 @@ class MockNvidiaGPU:
         self.gpus = [
             GPUStats(
                 gpu_id=index,
-                name=f"Mock RTX {6000 + index * 100}",
+                name=f"Mock RTX {6000 + index * 100} 48GB Max-Q Blackwell Server Edition",
                 driver_version="555.99",
                 cuda_version="12.5",
                 cuda_cc="9.0",
+                uuid=f"GPU-mock-{index:04d}-xtop",
             )
             for index in range(self.gpu_number)
         ]
@@ -69,7 +70,22 @@ class MockNvidiaGPU:
                 pcie_tx_kbps=int(256 + utilization * 31 + gpu.gpu_id * 128),
                 pcie_rx_kbps=int(512 + utilization * 49 + gpu.gpu_id * 192),
                 processes=self._build_processes(gpu.gpu_id, memory_used, utilization),
+                pcie_gen="Gen4",
+                pcie_link_width="x16",
+                uptime=self._format_mock_uptime(elapsed),
+                ecc_errors=0,
+                performance_cap="None",
             )
+
+    @staticmethod
+    def _format_mock_uptime(elapsed: float) -> str:
+        seconds = max(0, int(elapsed))
+        days, remainder = divmod(seconds, 86400)
+        hours, remainder = divmod(remainder, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        if days:
+            return f"{days}d {hours:02d}:{minutes:02d}:{seconds:02d}"
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
     def _build_processes(self, gpu_id: int, memory_used: float, utilization: int) -> list[GPUProcessStats]:
         process_count = 1 + int(utilization > 45) + int(utilization > 75)
