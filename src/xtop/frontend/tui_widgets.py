@@ -416,7 +416,6 @@ class GPUHistoryWidget(Static):
         overlay_width = max((len(str(line)) for line in meter_overlay), default=0)
         graph_gap = 2 if meter_overlay else 0
         primary_graph_width = max(content_width - overlay_width - graph_gap - 1, 24)
-        full_graph_width = content_width
         header = (
             f"{truncate_text(self.gpu_stats.name, 28)}  "
             f"util {util_value:>3}%  mem {mem_percent:>3.0f}%  "
@@ -433,14 +432,14 @@ class GPUHistoryWidget(Static):
         )
         memory_lines = create_graph(
             self.memory_history,
-            full_graph_width,
+            primary_graph_width,
             self.dashboard_layout.memory_graph_height,
             100.0,
             ColorTheme.GPU_YELLOW,
             self.graph_style,
         )
         graph_label_width = primary_graph_width
-        memory_label_width = full_graph_width
+        memory_label_width = primary_graph_width
         lines = [
             Text(truncate_text(header, graph_label_width), style=f"bold {BTOP_TEXT}"),
             build_history_label_line("utilization", util_value, graph_label_width, BTOP_CYAN),
