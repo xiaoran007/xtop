@@ -169,19 +169,19 @@ def resolve_gpu_dashboard_layout(width: int, height: int) -> GPUDashboardLayout:
     if total_height >= 42:
         history_height = 4
         memory_graph_height = 4
-        process_rows = 10
+        process_rows = 8
     elif total_height >= 34:
         history_height = 3
         memory_graph_height = 3
-        process_rows = 8
+        process_rows = 6
     elif total_height >= 28:
         history_height = 3
         memory_graph_height = 3
-        process_rows = 6
+        process_rows = 4
     else:
         history_height = 2
         memory_graph_height = 2
-        process_rows = 4
+        process_rows = 3
 
     if mode == "narrow":
         process_rows = max(3, min(process_rows, 5))
