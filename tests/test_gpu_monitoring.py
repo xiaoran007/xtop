@@ -225,24 +225,62 @@ class GPUMonitoringTests(unittest.TestCase):
             pcie_tx_kbps=1024,
             processes=[
                 SimpleNamespace(
-                    pid=1234,
+                    pid=1235,
                     username="alice",
                     process_type="compute",
                     name="python",
                     command_summary="python train.py --config exp.yaml",
+                    used_memory_mb=1024,
+                ),
+                SimpleNamespace(
+                    pid=1234,
+                    username="alice",
+                    process_type="compute",
+                    name="torchrun",
+                    command_summary="torchrun fit.py",
                     used_memory_mb=20480,
-                )
+                ),
             ],
         )
         layout = tui.resolve_gpu_dashboard_layout(180, 36)
 
+        header_widget = tui.TopHeaderWidget()
+        header_widget.selected_gpu = gpu_stats
+        header_widget.backend_label = "NVML"
+        header_rendered = str(header_widget.render_header("10:34:19"))
+
+        self.assertIn("GPU: 0 > RTX 4090", header_rendered)
+        self.assertIn("Backend: NVML", header_rendered)
+        self.assertIn("[1-9] Switch", header_rendered)
+
+        overview_widget = tui.GPUOverviewWidget()
+        other_gpu = SimpleNamespace(**{**gpu_stats.__dict__, "gpu_id": 1, "utilization": 12})
+        overview_widget.update_snapshot([gpu_stats, other_gpu], gpu_stats.gpu_id, layout, {0: deque([25, 50, 75], maxlen=120), 1: deque([5, 10, 12], maxlen=120)})
+        overview_rendered = str(overview_widget.render_overview())
+
+        self.assertIn("OVERVIEW", overview_rendered)
+        self.assertIn("ACTIVE", overview_rendered)
+        self.assertIn("RTX 4090", overview_rendered)
+
         history_widget = tui.GPUHistoryWidget()
-        history_widget.update_snapshot(gpu_stats, 4, deque([25, 50, 75], maxlen=120), deque([20, 30, 40], maxlen=120), tui.GraphStyle.BRAILLE, layout, [gpu_stats])
+        history_widget.update_snapshot(
+            gpu_stats,
+            4,
+            deque([25, 50, 75], maxlen=120),
+            deque([12000, 18000, 24576], maxlen=120),
+            tui.GraphStyle.BRAILLE,
+            layout,
+            [gpu_stats],
+            deque([120, 220, 320], maxlen=120),
+            deque([50, 60, 72], maxlen=120),
+        )
         history_rendered = str(history_widget.render_history())
 
-        self.assertIn("gpu 1/4", history_rendered)
-        self.assertIn("meters", history_rendered)
-        self.assertIn("memory", history_rendered)
+        self.assertIn("HISTORY", history_rendered)
+        self.assertIn("GPU UTILIZATION", history_rendered)
+        self.assertIn("MEMORY USED", history_rendered)
+        self.assertIn("POWER DRAW", history_rendered)
+        self.assertIn("TEMPERATURE", history_rendered)
         self.assertNotIn("gpu-totals", history_rendered)
         self.assertIn("RTX 4090", history_rendered)
 
@@ -250,29 +288,37 @@ class GPUMonitoringTests(unittest.TestCase):
         meter_widget.update_snapshot([gpu_stats], gpu_stats.gpu_id, layout)
         meter_rendered = str(meter_widget.render_meters())
 
-        self.assertIn("meters", meter_rendered)
+        self.assertIn("OVERVIEW", meter_rendered)
         self.assertIn("87%", meter_rendered)
 
-        resource_widget = tui.GPUResourceWidget()
+        resource_widget = tui.SelectedGPUDetailPanel()
         resource_widget.update_snapshot(gpu_stats, layout)
-        resource_rendered = str(resource_widget.render_resources())
+        resource_rendered = str(resource_widget.render_detail())
 
-        self.assertIn("mem/power", resource_rendered)
-        self.assertIn("Total", resource_rendered)
+        self.assertIn("SELECTED GPU", resource_rendered)
+        self.assertIn("Memory", resource_rendered)
+        self.assertIn("PCIe RX", resource_rendered)
+
+        missing_detail_gpu = SimpleNamespace(gpu_id=2, name="Minimal GPU", processes=[])
+        resource_widget.update_snapshot(missing_detail_gpu, layout)
+        self.assertIn("n/a", str(resource_widget.render_detail()))
 
         process_widget = tui.GPUProcessWidget()
         process_widget.update_snapshot(gpu_stats, layout)
         process_rendered = str(process_widget.render_processes())
 
-        self.assertIn("proc", process_rendered)
+        self.assertIn("PROCESSES", process_rendered)
+        self.assertLess(process_rendered.index("torchrun fit.py"), process_rendered.index("python train.py"))
+        self.assertIn("n/a", process_rendered)
         self.assertIn("python train.py", process_rendered)
 
-        status_widget = tui.GPUStatusWidget()
-        status_widget.update_snapshot(gpu_stats, ["mock data"], layout)
+        status_widget = tui.StatusLineWidget()
+        status_widget.update_snapshot(gpu_stats, ["mock data"], layout, "Mock")
         status_rendered = str(status_widget.render_status())
 
-        self.assertIn("device/status", status_rendered)
+        self.assertIn("Backend: Mock", status_rendered)
         self.assertIn("Driver 550.54", status_rendered)
+        self.assertIn("CUDA 12.4", status_rendered)
         self.assertIn("mock data", status_rendered)
 
     def test_process_panel_height_is_stable_when_process_count_changes(self):

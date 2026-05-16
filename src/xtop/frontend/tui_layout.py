@@ -134,26 +134,29 @@ def resolve_gpu_dashboard_layout(width: int, height: int) -> GPUDashboardLayout:
 
     if total_width >= 160:
         mode = "wide"
-        meter_width = min(62, max(50, total_width // 3))
-        history_width = total_width
-        resource_width = min(max(total_width // 3, 48), 70)
-        process_width = max(total_width - resource_width - 3, 52)
+        detail_width = min(52, max(42, total_width // 3))
+        history_width = max(total_width - detail_width - 3, 80)
+        meter_width = min(48, max(34, (total_width - 6) // 4))
+        resource_width = detail_width
+        process_width = history_width
         show_command_summary = True
         show_extended_metrics = True
         show_pcie = True
         show_fan_rpm = True
     elif total_width >= 100:
         mode = "normal"
-        meter_width = min(48, max(38, total_width // 3))
-        history_width = total_width
-        resource_width = min(max(total_width // 3, 38), 52)
-        process_width = max(total_width - resource_width - 3, 44)
+        detail_width = min(42, max(34, total_width // 3))
+        history_width = max(total_width - detail_width - 3, 56)
+        meter_width = min(40, max(30, (total_width - 4) // 3))
+        resource_width = detail_width
+        process_width = history_width
         show_command_summary = total_width >= 128
         show_extended_metrics = total_width >= 116
         show_pcie = total_width >= 124
         show_fan_rpm = total_width >= 112
     else:
         mode = "narrow"
+        detail_width = total_width
         meter_width = total_width
         history_width = total_width
         resource_width = total_width
@@ -164,28 +167,28 @@ def resolve_gpu_dashboard_layout(width: int, height: int) -> GPUDashboardLayout:
         show_fan_rpm = False
 
     if total_height >= 42:
-        history_height = 14
-        memory_graph_height = 5
+        history_height = 4
+        memory_graph_height = 4
         process_rows = 10
     elif total_height >= 34:
-        history_height = 11
-        memory_graph_height = 4
+        history_height = 3
+        memory_graph_height = 3
         process_rows = 8
     elif total_height >= 28:
-        history_height = 9
+        history_height = 3
         memory_graph_height = 3
         process_rows = 6
     else:
-        history_height = 7
-        memory_graph_height = 3
+        history_height = 2
+        memory_graph_height = 2
         process_rows = 4
 
     if mode == "narrow":
         process_rows = max(3, min(process_rows, 5))
 
     graph_width = max(history_width - 4, 24)
-    meter_bar_width = max(8, min(18, meter_width - 34))
-    resource_bar_width = max(10, min(32, resource_width - 24))
+    meter_bar_width = max(8, min(22, meter_width - 22))
+    resource_bar_width = max(8, min(18, resource_width - 28))
 
     return GPUDashboardLayout(
         mode=mode,
@@ -209,8 +212,8 @@ def resolve_gpu_dashboard_layout(width: int, height: int) -> GPUDashboardLayout:
         show_pcie=show_pcie,
         show_fan_rpm=show_fan_rpm,
         compact=mode == "narrow",
-        overview_width=meter_width,
-        detail_width=history_width,
+        overview_width=total_width,
+        detail_width=detail_width,
         graph_height=history_height,
         left_width=resource_width,
         right_width=process_width,
