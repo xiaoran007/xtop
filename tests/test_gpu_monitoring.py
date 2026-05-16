@@ -242,6 +242,8 @@ class GPUMonitoringTests(unittest.TestCase):
 
         self.assertIn("gpu 1/4", history_rendered)
         self.assertIn("meters", history_rendered)
+        self.assertIn("memory", history_rendered)
+        self.assertNotIn("gpu-totals", history_rendered)
         self.assertIn("RTX 4090", history_rendered)
 
         meter_widget = tui.GPUMeterWidget()

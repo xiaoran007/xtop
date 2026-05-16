@@ -179,6 +179,7 @@ def overlay_right_panel(
     content_width: int,
     gap: int = 2,
     right_margin: int = 1,
+    top_offset: int = 0,
 ) -> list[Text]:
     """Place a short right-side panel inside a wider btop-style region."""
     if not overlay_lines:
@@ -187,12 +188,13 @@ def overlay_right_panel(
     overlay_width = max(len(str(line)) for line in overlay_lines)
     overlay_start = max(0, content_width - overlay_width - right_margin)
     base_width = max(0, overlay_start - gap)
-    row_count = max(len(base_lines), len(overlay_lines))
+    row_count = max(len(base_lines), top_offset + len(overlay_lines))
     rendered = []
 
     for row_index in range(row_count):
         base_line = base_lines[row_index] if row_index < len(base_lines) else Text("")
-        overlay_line = overlay_lines[row_index] if row_index < len(overlay_lines) else None
+        overlay_index = row_index - top_offset
+        overlay_line = overlay_lines[overlay_index] if 0 <= overlay_index < len(overlay_lines) else None
         base_style = getattr(base_line, "style", None) or BTOP_TEXT
         base_text = str(base_line)[:base_width]
 
@@ -204,6 +206,13 @@ def overlay_right_panel(
         rendered.append(Text.assemble(Text(base_text, style=base_style), Text(spacer), overlay_line, Text(" " * right_margin)))
 
     return rendered
+
+
+def build_history_label_line(label: str, percent: float, width: int, style: str) -> Text:
+    """Render aligned history labels and dotted value rulers."""
+    label_width = 12
+    dot_width = max(width - label_width - 6, 8)
+    return Text(f"{label:<{label_width}}{render_dots(percent, dot_width)} {percent:>3.0f}%", style=style)
 
 
 def build_process_lines(processes, layout: GPUWidgetLayout) -> list[str]:
@@ -434,12 +443,13 @@ class GPUHistoryWidget(Static):
         memory_label_width = full_graph_width
         lines = [
             Text(truncate_text(header, graph_label_width), style=f"bold {BTOP_TEXT}"),
-            Text(f"utilization {render_dots(util_value, max(graph_label_width - 20, 8))} {util_value:>3}%", style=BTOP_CYAN),
+            build_history_label_line("utilization", util_value, graph_label_width, BTOP_CYAN),
         ]
         lines.extend(graph_lines)
         if meter_overlay:
-            lines = overlay_right_panel(lines, meter_overlay, content_width)
-        lines.append(Text(f"total ▴▾ gpu-totals {render_dots(mem_percent, max(memory_label_width - 31, 8))} {mem_percent:>3.0f}%", style=BTOP_MUTED))
+            overlay_top = max(0, (len(lines) - len(meter_overlay)) // 2)
+            lines = overlay_right_panel(lines, meter_overlay, content_width, top_offset=overlay_top)
+        lines.append(build_history_label_line("memory", mem_percent, memory_label_width, BTOP_YELLOW))
         lines.extend(memory_lines)
         return make_box(title, lines, self.dashboard_layout.history_width, BTOP_BORDER_GREEN)
 
