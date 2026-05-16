@@ -737,6 +737,15 @@ class SelectedGPUDetailPanel(Static):
             Text(sparkline, style=BTOP_CYAN),
         )
 
+    def _target_content_height(self) -> int:
+        chart_rows = (
+            self.dashboard_layout.history_height * 3
+            + self.dashboard_layout.memory_graph_height
+            + 4
+        )
+        process_rows = self.dashboard_layout.process_rows + 1
+        return chart_rows + process_rows + 3
+
     def render_detail(self) -> RenderableType:
         if self.gpu_stats is None:
             return make_box("SELECTED GPU", [Text("No GPU selected.", style=BTOP_YELLOW)], self.dashboard_layout.detail_width, BTOP_BORDER_GREEN)
@@ -789,6 +798,9 @@ class SelectedGPUDetailPanel(Static):
             self._pair_line("ECC Errors", str(getattr(self.gpu_stats, "ecc_errors", 0) if getattr(self.gpu_stats, "ecc_errors", None) is not None else "n/a")),
             self._pair_line("Performance Cap", getattr(self.gpu_stats, "performance_cap", None) or "None"),
         ]
+        if self.dashboard_layout.mode != "narrow":
+            while len(lines) < self._target_content_height():
+                lines.append(Text(""))
         return make_box("SELECTED GPU", lines, self.dashboard_layout.detail_width, BTOP_BORDER_GREEN)
 
     def render_resources(self) -> RenderableType:
