@@ -210,11 +210,14 @@ def build_box_lines(title: str, lines: list[Text], width: int, style: str = "cya
     rendered = [top]
     for line in lines:
         text = truncate_text(str(line), content_width)
-        line_style = getattr(line, "style", None) or BTOP_TEXT
+        line_style = getattr(line, "style", None)
+        content = line if isinstance(line, Text) and len(str(line)) <= content_width else Text(text, style=line_style or BTOP_TEXT)
+        padding = " " * max(content_width - len(str(content)), 0)
         rendered.append(
             Text.assemble(
                 Text("│", style=border_style),
-                Text(f"{text:<{content_width}}", style=line_style),
+                content,
+                Text(padding, style=line_style or BTOP_TEXT),
                 Text("│", style=border_style),
             )
         )
@@ -690,51 +693,101 @@ class SelectedGPUDetailPanel(Static):
         self.dashboard_layout = layout
         self.update(self.render_detail())
 
-    def _bar_line(self, label: str, value: str, percent: float, color: str) -> Text:
-        content_width = max(self.dashboard_layout.detail_width - 2, 24)
-        label_width = 10
-        percent_label = format_percent(percent)
-        value_width = max(10, min(16, content_width - label_width - len(percent_label) - 12))
+    def _content_width(self) -> int:
+        return max(self.dashboard_layout.detail_width - 2, 24)
+
+    def _separator(self) -> Text:
+        return Text("─" * max(self._content_width() - 2, 12), style=BTOP_MUTED)
+
+    def _pair_line(self, label: str, value: str, value_style: str = BTOP_TEXT) -> Text:
+        label_width = 18
+        value_width = max(self._content_width() - label_width, 8)
+        return Text.assemble(
+            Text(f"{label:<{label_width}}", style=BTOP_MUTED),
+            Text(truncate_text(value, value_width), style=value_style),
+        )
+
+    def _bar_line(self, label: str, value: str, percent: Optional[float], color: str, show_percent: bool = True) -> Text:
+        content_width = self._content_width()
+        label_width = 16 if "Clock" in label else 12
+        percent_label = format_percent(percent) if show_percent else ""
+        value_width = max(10, min(18, content_width - label_width - len(percent_label) - 14))
         bar_width = max(6, content_width - label_width - value_width - len(percent_label) - 3)
         value_text = truncate_text(value, value_width)
-        bar = render_bar(percent, bar_width)
-        return Text(f"{label:<{label_width}}{value_text:<{value_width}} {bar} {percent_label:>4}", style=color)
+        bar = render_bar(percent or 0.0, bar_width)
+        return Text.assemble(
+            Text(f"{label:<{label_width}}", style=color),
+            Text(f"{value_text:<{value_width}} ", style=color),
+            Text(bar, style=color),
+            Text(f" {percent_label:>4}" if show_percent else "", style=color),
+        )
+
+    def _pcie_line(self, label: str, value: str, throughput_kbps: Optional[int]) -> Text:
+        content_width = self._content_width()
+        label_width = 18
+        value_width = 14
+        spark_width = max(content_width - label_width - value_width - 1, 0)
+        sparkline = ""
+        if throughput_kbps is not None and spark_width >= 6:
+            spark_values = [0, throughput_kbps * 0.25, throughput_kbps * 0.45, throughput_kbps * 0.35, throughput_kbps * 0.55, throughput_kbps]
+            sparkline = render_sparkline(spark_values, spark_width, max(throughput_kbps, 1))
+        return Text.assemble(
+            Text(f"{label:<{label_width}}", style=BTOP_MUTED),
+            Text(f"{truncate_text(value, value_width):<{value_width}}", style=BTOP_TEXT),
+            Text(sparkline, style=BTOP_CYAN),
+        )
 
     def render_detail(self) -> RenderableType:
         if self.gpu_stats is None:
             return make_box("SELECTED GPU", [Text("No GPU selected.", style=BTOP_YELLOW)], self.dashboard_layout.detail_width, BTOP_BORDER_GREEN)
 
-        mem_used = getattr(self.gpu_stats, "memory_used", 0) or 0
-        mem_total = getattr(self.gpu_stats, "memory_total", 0) or 0
+        mem_used = getattr(self.gpu_stats, "memory_used", None)
+        mem_total = getattr(self.gpu_stats, "memory_total", None)
         mem_percent = calculate_memory_percent(self.gpu_stats)
         power_usage = getattr(self.gpu_stats, "power_usage", None)
         power_limit = getattr(self.gpu_stats, "power_limit", None)
         power_percent = calculate_power_percent(self.gpu_stats)
         temp = getattr(self.gpu_stats, "temperature", None)
         temp_percent = min(max(temp or 0, 0), 100)
-        fan = format_fan_summary(self.gpu_stats, self.dashboard_layout.show_fan_rpm)
+        fan_percent = getattr(self.gpu_stats, "fan_speed", None)
+        fan_rpm = getattr(self.gpu_stats, "fan_speed_rpm", None)
+        fan_value = f"{fan_rpm} RPM" if fan_rpm is not None else format_fan_summary(self.gpu_stats, False)
+        graphics_clock = getattr(self.gpu_stats, "graphics_clock_mhz", None)
+        memory_clock = getattr(self.gpu_stats, "memory_clock_mhz", None)
+        sm_clock = getattr(self.gpu_stats, "sm_clock_mhz", None)
+        pcie_rx = getattr(self.gpu_stats, "pcie_rx_kbps", None)
+        pcie_tx = getattr(self.gpu_stats, "pcie_tx_kbps", None)
         health = "OK" if temp is None or temp < 80 else "WARN" if temp < 90 else "HOT"
         health_style = BTOP_GREEN if health == "OK" else BTOP_ORANGE if health == "WARN" else BTOP_RED
 
         lines = [
-            Text(f"{'Name':<14}{truncate_text(getattr(self.gpu_stats, 'name', 'unknown'), 24)}", style=BTOP_TEXT),
-            Text(f"{'GPU Index':<14}{getattr(self.gpu_stats, 'gpu_id', 'n/a')}", style=BTOP_TEXT),
-            Text(f"{'State':<14}{getattr(self.gpu_stats, 'p_state', None) or 'n/a'}", style=BTOP_GREEN),
-            Text(f"{'Driver':<14}{getattr(self.gpu_stats, 'driver_version', 'n/a')}  CUDA {getattr(self.gpu_stats, 'cuda_version', 'n/a')}", style=BTOP_TEXT),
-            Text(f"{'Health':<14}{health}", style=health_style),
-            Text("─" * max(self.dashboard_layout.detail_width - 4, 12), style=BTOP_MUTED),
+            self._pair_line("Name", getattr(self.gpu_stats, "name", "unknown")),
+            self._pair_line("GPU Index", str(getattr(self.gpu_stats, "gpu_id", "n/a"))),
+            self._pair_line("UUID", getattr(self.gpu_stats, "uuid", None) or "n/a"),
+            self._pair_line("State", "Active", BTOP_GREEN),
+            self._pair_line("Driver", f"{getattr(self.gpu_stats, 'driver_version', 'n/a')}    CUDA {getattr(self.gpu_stats, 'cuda_version', 'n/a')}"),
+            self._pair_line("Health", health, health_style),
+            self._separator(),
             self._bar_line("Memory", f"{format_memory_gib(mem_used)} / {format_memory_gib(mem_total)} GiB", mem_percent, BTOP_YELLOW),
             self._bar_line("Power", f"{format_na(power_usage, 'W')} / {format_na(power_limit, 'W')}", power_percent, BTOP_MAGENTA),
             self._bar_line("Temp", format_na(temp, "C"), temp_percent, BTOP_GREEN if (temp or 0) < 80 else BTOP_ORANGE),
-            Text(f"{'Fan':<12}{fan}", style=BTOP_GREEN),
-            Text("─" * max(self.dashboard_layout.detail_width - 4, 12), style=BTOP_MUTED),
-            Text(f"{'Graphics Clock':<18}{format_na(getattr(self.gpu_stats, 'graphics_clock_mhz', None), ' MHz')}", style=BTOP_CYAN),
-            Text(f"{'Memory Clock':<18}{format_na(getattr(self.gpu_stats, 'memory_clock_mhz', None), ' MHz')}", style=BTOP_CYAN),
-            Text(f"{'SM Clock':<18}{format_na(getattr(self.gpu_stats, 'sm_clock_mhz', None), ' MHz')}", style=BTOP_CYAN),
-            Text("─" * max(self.dashboard_layout.detail_width - 4, 12), style=BTOP_MUTED),
-            Text(f"{'PCIe RX':<18}{format_data_rate(getattr(self.gpu_stats, 'pcie_rx_kbps', None)).replace('N/A', 'n/a')}", style=BTOP_TEXT),
-            Text(f"{'PCIe TX':<18}{format_data_rate(getattr(self.gpu_stats, 'pcie_tx_kbps', None)).replace('N/A', 'n/a')}", style=BTOP_TEXT),
-            Text(f"{'Processes':<18}{len(getattr(self.gpu_stats, 'processes', []))}", style=BTOP_TEXT),
+            self._bar_line("Fan", fan_value, fan_percent, BTOP_GREEN),
+            self._separator(),
+            self._bar_line("Graphics Clock", format_na(graphics_clock, " MHz"), (graphics_clock or 0) / 3000 * 100, BTOP_CYAN, False),
+            self._bar_line("Memory Clock", format_na(memory_clock, " MHz"), (memory_clock or 0) / 12000 * 100, BTOP_CYAN, False),
+            self._bar_line("SM Clock", format_na(sm_clock, " MHz"), (sm_clock or 0) / 3000 * 100, BTOP_CYAN, False),
+            self._separator(),
+            self._pcie_line("PCIe RX", format_data_rate(pcie_rx).replace("N/A", "n/a"), pcie_rx),
+            self._pcie_line("PCIe TX", format_data_rate(pcie_tx).replace("N/A", "n/a"), pcie_tx),
+            self._pair_line("PCIe Gen", getattr(self.gpu_stats, "pcie_gen", None) or "n/a"),
+            self._pair_line("Link Width", getattr(self.gpu_stats, "pcie_link_width", None) or "n/a"),
+            self._pair_line("Link State", "Active" if pcie_rx is not None or pcie_tx is not None else "n/a", BTOP_GREEN if pcie_rx is not None or pcie_tx is not None else BTOP_MUTED),
+            self._separator(),
+            self._pair_line("Processes", str(len(getattr(self.gpu_stats, "processes", [])))),
+            self._pair_line("Compute Clients", str(len(getattr(self.gpu_stats, "processes", [])))),
+            self._pair_line("Uptime", getattr(self.gpu_stats, "uptime", None) or "n/a"),
+            self._pair_line("ECC Errors", str(getattr(self.gpu_stats, "ecc_errors", 0) if getattr(self.gpu_stats, "ecc_errors", None) is not None else "n/a")),
+            self._pair_line("Performance Cap", getattr(self.gpu_stats, "performance_cap", None) or "None"),
         ]
         return make_box("SELECTED GPU", lines, self.dashboard_layout.detail_width, BTOP_BORDER_GREEN)
 
