@@ -1,7 +1,7 @@
 from collections import deque
 
 from textual.app import App, ComposeResult
-from textual.containers import Horizontal, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Footer, Header
 
 from xtop.xtopUtil import getOS
@@ -14,7 +14,8 @@ from .tui_backends import (
     resolve_npu_unavailable_message,
 )
 from .tui_graphs import GraphStyle
-from .tui_widgets import GPUDetailWidget, GPUOverviewWidget, StatusWidget, TimeWidget, calculate_memory_percent
+from .tui_layout import resolve_gpu_dashboard_layout
+from .tui_widgets import GPUDetailWidget, GPUOverviewWidget, GPUProcessWidget, StatusWidget, TimeWidget, calculate_memory_percent
 
 
 class XtopTUI(App):
@@ -38,16 +39,22 @@ class XtopTUI(App):
     #gpu-dashboard {
         height: auto;
         min-height: 24;
+        width: 100%;
     }
 
-    #gpu-overview {
-        width: 42;
+    #gpu-left-column {
         min-width: 32;
         padding: 0 1 0 0;
     }
 
-    #gpu-detail {
+    #gpu-right-column {
         width: 1fr;
+    }
+
+    #gpu-overview,
+    #gpu-processes,
+    #gpu-detail {
+        width: 100%;
     }
     """
 
@@ -112,7 +119,10 @@ class XtopTUI(App):
         self.selected_gpu_index = 0
         self.utilization_history = {}
         self.memory_history = {}
+        self.gpu_left_column = None
+        self.gpu_right_column = None
         self.gpu_overview_widget = None
+        self.gpu_process_widget = None
         self.gpu_detail_widget = None
 
     def compose(self) -> ComposeResult:
@@ -159,11 +169,17 @@ class XtopTUI(App):
             self.gpu_backend.update()
             self._record_gpu_histories()
             dashboard = Horizontal(id="gpu-dashboard")
+            self.gpu_left_column = Vertical(id="gpu-left-column")
+            self.gpu_right_column = Vertical(id="gpu-right-column")
             self.gpu_overview_widget = GPUOverviewWidget()
+            self.gpu_process_widget = GPUProcessWidget()
             self.gpu_detail_widget = GPUDetailWidget(self.graph_style)
             container.mount(dashboard)
-            dashboard.mount(self.gpu_overview_widget)
-            dashboard.mount(self.gpu_detail_widget)
+            dashboard.mount(self.gpu_left_column)
+            dashboard.mount(self.gpu_right_column)
+            self.gpu_left_column.mount(self.gpu_overview_widget)
+            self.gpu_left_column.mount(self.gpu_process_widget)
+            self.gpu_right_column.mount(self.gpu_detail_widget)
             self._refresh_gpu_widgets()
 
         for message in dict.fromkeys(self.status_messages):
@@ -227,17 +243,38 @@ class XtopTUI(App):
             memory_history.append(calculate_memory_percent(gpu))
 
     def _refresh_gpu_widgets(self) -> None:
-        if self.gpu_overview_widget is None or self.gpu_detail_widget is None:
+        if self.gpu_overview_widget is None or self.gpu_process_widget is None or self.gpu_detail_widget is None:
             return
 
         selected_gpu = self._selected_gpu()
         if selected_gpu is None:
             return
 
-        self.gpu_overview_widget.update_snapshot(self.gpu_backend.gpus, selected_gpu.gpu_id)
+        layout = self._resolve_dashboard_layout()
+        self._apply_dashboard_layout(layout)
+        self.gpu_overview_widget.update_snapshot(self.gpu_backend.gpus, selected_gpu.gpu_id, layout)
+        self.gpu_process_widget.update_snapshot(selected_gpu, layout)
         self.gpu_detail_widget.update_snapshot(
             selected_gpu,
             self.utilization_history[selected_gpu.gpu_id],
             self.memory_history[selected_gpu.gpu_id],
             self.graph_style,
+            layout,
         )
+
+    def _resolve_dashboard_layout(self):
+        size = getattr(self, "size", None)
+        try:
+            screen = getattr(self, "screen", None)
+        except Exception:
+            screen = None
+        screen_size = getattr(screen, "size", None)
+        width = getattr(size, "width", 0) or getattr(screen_size, "width", 0) or 120
+        height = getattr(size, "height", 0) or getattr(screen_size, "height", 0) or 32
+        return resolve_gpu_dashboard_layout(width, height)
+
+    def _apply_dashboard_layout(self, layout) -> None:
+        if self.gpu_left_column is not None:
+            self.gpu_left_column.styles.width = layout.left_width
+        if self.gpu_right_column is not None:
+            self.gpu_right_column.styles.width = layout.right_width

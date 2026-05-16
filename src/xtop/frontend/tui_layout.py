@@ -25,6 +25,12 @@ class GPUDashboardLayout:
     show_extended_metrics: bool
     show_command_summary: bool
     compact: bool
+    left_width: int
+    right_width: int
+    overview_bar_width: int
+    utilization_graph_height: int
+    memory_graph_height: int
+    show_driver_info: bool
 
 
 def truncate_text(value: str, max_width: int) -> str:
@@ -108,32 +114,54 @@ def resolve_gpu_widget_layout(width: int, height: int) -> GPUWidgetLayout:
 
 
 def resolve_gpu_dashboard_layout(width: int, height: int) -> GPUDashboardLayout:
-    """Choose the overview/detail sizing for the GPU dashboard."""
-    compact = width < 100
-    overview_width = 32 if compact else 40
-    detail_width = max(width - overview_width - 4, 42)
-    graph_height = 6
-    if height >= 38:
-        graph_height = 10
-    elif height >= 30:
-        graph_height = 8
+    """Choose dashboard dimensions from the full terminal size."""
+    terminal_width = max(width, 72)
+    terminal_height = max(height, 20)
+    compact = terminal_width < 104
 
-    process_limit = 3
-    if height >= 36:
+    if terminal_width < 96:
+        left_width = 34
+    elif terminal_width < 132:
+        left_width = 44
+    elif terminal_width < 176:
+        left_width = 54
+    else:
+        left_width = min(66, max(58, terminal_width // 3))
+
+    right_width = max(terminal_width - left_width - 4, 40)
+
+    utilization_graph_height = 6
+    if terminal_height >= 42:
+        utilization_graph_height = 12
+    elif terminal_height >= 34:
+        utilization_graph_height = 10
+    elif terminal_height >= 28:
+        utilization_graph_height = 8
+
+    memory_graph_height = max(4, utilization_graph_height // 2)
+
+    if terminal_height >= 40:
+        process_limit = 8
+    elif terminal_height >= 32:
         process_limit = 6
-    elif height >= 28:
+    elif terminal_height >= 26:
         process_limit = 4
-
-    if compact:
-        process_limit = min(process_limit, 3)
+    else:
+        process_limit = 3
 
     return GPUDashboardLayout(
-        overview_width=overview_width,
-        detail_width=detail_width,
-        graph_width=max(detail_width - 4, 24),
-        graph_height=graph_height,
+        overview_width=left_width,
+        detail_width=right_width,
+        graph_width=max(right_width - 4, 24),
+        graph_height=utilization_graph_height,
         process_limit=process_limit,
-        show_extended_metrics=detail_width >= 76,
-        show_command_summary=detail_width >= 94,
+        show_extended_metrics=right_width >= 72,
+        show_command_summary=left_width >= 52,
         compact=compact,
+        left_width=left_width,
+        right_width=right_width,
+        overview_bar_width=max(6, min(22, left_width - 30)),
+        utilization_graph_height=utilization_graph_height,
+        memory_graph_height=memory_graph_height,
+        show_driver_info=right_width >= 62,
     )

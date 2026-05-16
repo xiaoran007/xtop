@@ -1,5 +1,6 @@
 from collections import deque
 from datetime import datetime
+from typing import Optional
 
 from rich.console import RenderableType
 from rich.text import Text
@@ -7,6 +8,7 @@ from textual.widgets import Static
 
 from .tui_graphs import ColorTheme, GraphStyle, create_graph
 from .tui_layout import (
+    GPUDashboardLayout,
     GPUWidgetLayout,
     format_data_rate,
     format_optional_number,
@@ -30,7 +32,11 @@ def build_separator(style: str, content_width: int) -> Text:
 def resolve_terminal_height(widget, fallback: int = 28) -> int:
     """Prefer viewport height over the widget's transient auto-layout height."""
     size = getattr(widget, "size", None)
-    screen_size = getattr(getattr(widget, "screen", None), "size", None)
+    try:
+        screen = getattr(widget, "screen", None)
+    except Exception:
+        screen = None
+    screen_size = getattr(screen, "size", None)
     app_size = getattr(getattr(widget, "app", None), "size", None)
 
     candidates = [
@@ -74,6 +80,42 @@ def build_process_lines(processes, layout: GPUWidgetLayout) -> list[str]:
         lines.append(f"... and {hidden_count} more process(es)")
 
     return lines
+
+
+def build_process_panel_lines(processes, layout: GPUDashboardLayout) -> list[Text]:
+    """Render selected-GPU processes in a fixed-height left panel."""
+    content_width = max(layout.left_width - 2, 28)
+    visible_processes = list(processes)[: layout.process_limit]
+    hidden_count = max(len(processes) - len(visible_processes), 0)
+    lines = [
+        Text("Processes", style="bold cyan"),
+        Text(truncate_text(f"current user: {len(processes)}", content_width), style="cyan"),
+    ]
+
+    if not visible_processes:
+        lines.append(Text("No current-user GPU processes.", style="cyan"))
+    else:
+        for process in visible_processes:
+            pid = getattr(process, "pid", "?")
+            process_type = truncate_text(getattr(process, "process_type", "?") or "?", 7)
+            process_name = truncate_text(getattr(process, "name", None) or "unknown", 12)
+            memory_label = format_process_memory(getattr(process, "used_memory_mb", None))
+            command_summary = getattr(process, "command_summary", None)
+
+            if layout.show_command_summary and command_summary:
+                row = f"{pid:<6} {memory_label:>6} {process_type:<7} {command_summary}"
+            else:
+                row = f"{pid:<6} {memory_label:>6} {process_type:<7} {process_name}"
+            lines.append(Text(truncate_text(row, content_width), style="cyan"))
+
+    if hidden_count:
+        lines.append(Text(truncate_text(f"... and {hidden_count} more", content_width), style="cyan"))
+
+    target_rows = layout.process_limit + 3
+    while len(lines) < target_rows:
+        lines.append(Text(""))
+
+    return lines[:target_rows]
 
 
 def calculate_memory_percent(gpu_stats) -> float:
@@ -156,10 +198,6 @@ def build_gpu_detail_lines(gpu_stats, layout, util_history, mem_history, graph_s
     for line in metric_lines:
         result_lines.append(make_widget_line(line, "cyan", content_width))
 
-    result_lines.append(build_separator("cyan", content_width))
-    for line in build_process_lines(getattr(gpu_stats, "processes", []), layout):
-        result_lines.append(make_widget_line(line, "cyan", content_width))
-
     if layout.show_graph:
         result_lines.append(Text("| Utilization", style="cyan"))
         for line in create_graph(
@@ -219,19 +257,21 @@ class GPUOverviewWidget(Static):
         super().__init__(id="gpu-overview")
         self.gpus = []
         self.selected_gpu_id = 0
+        self.dashboard_layout = resolve_gpu_dashboard_layout(120, 32)
 
-    def update_snapshot(self, gpus, selected_gpu_id: int) -> None:
+    def update_snapshot(self, gpus, selected_gpu_id: int, layout: Optional[GPUDashboardLayout] = None) -> None:
         self.gpus = list(gpus)
         self.selected_gpu_id = selected_gpu_id
+        if layout is not None:
+            self.dashboard_layout = layout
         self.update(self.render_overview())
 
     def render_overview(self) -> RenderableType:
-        size = getattr(self, "size", None)
-        width = getattr(size, "width", 40) or 40
-        bar_width = 10 if width < 36 else 14
+        width = self.dashboard_layout.left_width
+        bar_width = self.dashboard_layout.overview_bar_width
         lines = [
             Text("GPU Overview", style="bold cyan"),
-            Text("Sel ID  Util       Mem        Pwr  Proc", style="cyan"),
+            Text(truncate_text("Sel ID  Util              Mem   Pwr Proc", width - 1), style="cyan"),
         ]
 
         for gpu in self.gpus:
@@ -253,6 +293,23 @@ class GPUOverviewWidget(Static):
         return Text("\n").join(lines)
 
 
+class GPUProcessWidget(Static):
+    """Selected GPU process panel with stable row budget."""
+
+    def __init__(self) -> None:
+        super().__init__(id="gpu-processes")
+        self.processes = []
+        self.dashboard_layout = resolve_gpu_dashboard_layout(120, 32)
+
+    def update_snapshot(self, gpu_stats, layout: GPUDashboardLayout) -> None:
+        self.processes = list(getattr(gpu_stats, "processes", []))
+        self.dashboard_layout = layout
+        self.update(self.render_processes())
+
+    def render_processes(self) -> RenderableType:
+        return Text("\n").join(build_process_panel_lines(self.processes, self.dashboard_layout))
+
+
 class GPUDetailWidget(Static):
     """Selected GPU detail panel."""
 
@@ -262,29 +319,38 @@ class GPUDetailWidget(Static):
         self.utilization_history = deque([0.0] * 120, maxlen=120)
         self.memory_history = deque([0.0] * 120, maxlen=120)
         self.graph_style = graph_style
+        self.dashboard_layout = resolve_gpu_dashboard_layout(120, 32)
 
-    def update_snapshot(self, gpu_stats, utilization_history, memory_history, graph_style: GraphStyle) -> None:
+    def update_snapshot(
+        self,
+        gpu_stats,
+        utilization_history,
+        memory_history,
+        graph_style: GraphStyle,
+        layout: Optional[GPUDashboardLayout] = None,
+    ) -> None:
         self.gpu_stats = gpu_stats
         self.utilization_history = utilization_history
         self.memory_history = memory_history
         self.graph_style = graph_style
+        if layout is not None:
+            self.dashboard_layout = layout
         self.update(self.render_detail())
 
     def render_detail(self) -> RenderableType:
         if self.gpu_stats is None:
             return Text("No GPU selected.", style="yellow")
 
-        size = getattr(self, "size", None)
-        app_size = getattr(getattr(self, "app", None), "size", None)
-        width = getattr(size, "width", 96) or getattr(app_size, "width", 96) or 96
         height = resolve_terminal_height(self)
-        dashboard_layout = resolve_gpu_dashboard_layout(width, height)
-        widget_layout = resolve_gpu_widget_layout(dashboard_layout.detail_width, height)
+        dashboard_layout = self.dashboard_layout
+        widget_layout = resolve_gpu_widget_layout(dashboard_layout.right_width, height)
+        widget_layout.content_width = max(dashboard_layout.right_width - 3, 36)
         widget_layout.graph_width = dashboard_layout.graph_width
-        widget_layout.graph_height = dashboard_layout.graph_height
+        widget_layout.graph_height = dashboard_layout.utilization_graph_height
         widget_layout.process_limit = dashboard_layout.process_limit
+        widget_layout.show_driver_info = dashboard_layout.show_driver_info
         widget_layout.show_extended_metrics = dashboard_layout.show_extended_metrics
-        widget_layout.show_command_summary = dashboard_layout.show_command_summary
+        widget_layout.show_command_summary = False
         widget_layout.compact_process_rows = dashboard_layout.compact
 
         return Text("\n").join(
@@ -321,6 +387,7 @@ class GPUStatsWidget(Static):
         width = getattr(size, "width", 84) or 84
         height = resolve_terminal_height(self)
         layout = resolve_gpu_widget_layout(width, height)
+        layout.process_limit = 0
         return Text("\n").join(
             build_gpu_detail_lines(
                 self.gpu_stats,
