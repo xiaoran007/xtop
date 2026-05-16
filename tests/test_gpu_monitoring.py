@@ -261,6 +261,7 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertIn("OVERVIEW", overview_rendered)
         self.assertIn("ACTIVE", overview_rendered)
         self.assertIn("RTX 4090", overview_rendered)
+        self.assertIn("━", overview_rendered)
 
         history_widget = tui.GPUHistoryWidget()
         history_widget.update_snapshot(
@@ -292,12 +293,18 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertIn("87%", meter_rendered)
 
         resource_widget = tui.SelectedGPUDetailPanel()
-        resource_widget.update_snapshot(gpu_stats, layout)
+        resource_widget.update_snapshot(
+            gpu_stats,
+            layout,
+            deque([0, 512, 1024, 2048], maxlen=120),
+            deque([0, 256, 512, 1024], maxlen=120),
+        )
         resource_rendered = str(resource_widget.render_detail())
 
         self.assertIn("SELECTED GPU", resource_rendered)
         self.assertIn("Memory", resource_rendered)
         self.assertIn("PCIe RX", resource_rendered)
+        self.assertIn("█", resource_rendered)
 
         missing_detail_gpu = SimpleNamespace(gpu_id=2, name="Minimal GPU", processes=[])
         resource_widget.update_snapshot(missing_detail_gpu, layout)

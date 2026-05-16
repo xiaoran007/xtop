@@ -149,6 +149,8 @@ class XtopTUI(App):
         self.memory_history = {}
         self.power_history = {}
         self.temperature_history = {}
+        self.pcie_rx_history = {}
+        self.pcie_tx_history = {}
         self.top_header_widget = None
         self.gpu_overview_row = None
         self.gpu_main_row = None
@@ -325,10 +327,14 @@ class XtopTUI(App):
             memory_history = self.memory_history.setdefault(gpu.gpu_id, deque([0.0] * 160, maxlen=160))
             power_history = self.power_history.setdefault(gpu.gpu_id, deque([0.0] * 160, maxlen=160))
             temperature_history = self.temperature_history.setdefault(gpu.gpu_id, deque([0.0] * 160, maxlen=160))
+            pcie_rx_history = self.pcie_rx_history.setdefault(gpu.gpu_id, deque([0.0] * 160, maxlen=160))
+            pcie_tx_history = self.pcie_tx_history.setdefault(gpu.gpu_id, deque([0.0] * 160, maxlen=160))
             util_history.append(getattr(gpu, "utilization", 0) or 0.0)
             memory_history.append(getattr(gpu, "memory_used", 0) or 0.0)
             power_history.append(getattr(gpu, "power_usage", 0) or 0.0)
             temperature_history.append(getattr(gpu, "temperature", 0) or 0.0)
+            pcie_rx_history.append(getattr(gpu, "pcie_rx_kbps", 0) or 0.0)
+            pcie_tx_history.append(getattr(gpu, "pcie_tx_kbps", 0) or 0.0)
 
     def _refresh_gpu_widgets(self) -> None:
         required_widgets = [
@@ -362,7 +368,12 @@ class XtopTUI(App):
             self.power_history[selected_gpu.gpu_id],
             self.temperature_history[selected_gpu.gpu_id],
         )
-        self.gpu_detail_widget.update_snapshot(selected_gpu, layout)
+        self.gpu_detail_widget.update_snapshot(
+            selected_gpu,
+            layout,
+            self.pcie_rx_history[selected_gpu.gpu_id],
+            self.pcie_tx_history[selected_gpu.gpu_id],
+        )
         self.gpu_process_widget.update_snapshot(selected_gpu, layout)
         self.gpu_status_widget.update_snapshot(selected_gpu, self.status_messages, layout, backend_label)
 

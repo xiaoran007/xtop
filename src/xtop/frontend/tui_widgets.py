@@ -630,6 +630,7 @@ class GPUOverviewWidget(Static):
         fan = format_fan_summary(gpu, self.dashboard_layout.show_fan_rpm)
         history = self.utilization_history.get(gpu_id, deque([util or 0.0], maxlen=1))
         spark_width = max(content_width - 2, 8)
+        bar_width = max(content_width - 10, 8)
         active_label = " ACTIVE" if selected else ""
         border_style = BTOP_CYAN if selected else BTOP_MUTED
 
@@ -640,7 +641,9 @@ class GPUOverviewWidget(Static):
             ),
             Text(render_sparkline(history, spark_width, 100.0), style=BTOP_CYAN),
             Text(f"Mem {format_memory_gib(mem_used):>5}/{format_memory_gib(mem_total):<5} GiB {format_percent(mem_percent):>5}", style=BTOP_YELLOW),
+            Text(f"    {render_bar(mem_percent, bar_width)}", style=BTOP_YELLOW),
             Text(f"Pwr {format_na(power_usage, 'W'):>6} / {format_na(power_limit, 'W'):<6} {format_percent(power_percent):>5}", style=BTOP_MAGENTA),
+            Text(f"    {render_bar(power_percent, bar_width)}", style=BTOP_MAGENTA),
             Text(f"Temp {format_na(temp, 'C'):<8} Fan {truncate_text(fan, max(content_width - 18, 3))}", style=BTOP_GREEN),
         ]
         return build_box_lines("", lines, card_width, border_style)
@@ -687,10 +690,14 @@ class SelectedGPUDetailPanel(Static):
         super().__init__(id="gpu-details")
         self.gpu_stats = None
         self.dashboard_layout = resolve_gpu_dashboard_layout(120, 32)
+        self.pcie_rx_history = deque([0.0] * 120, maxlen=120)
+        self.pcie_tx_history = deque([0.0] * 120, maxlen=120)
 
-    def update_snapshot(self, gpu_stats, layout):
+    def update_snapshot(self, gpu_stats, layout, pcie_rx_history=None, pcie_tx_history=None):
         self.gpu_stats = gpu_stats
         self.dashboard_layout = layout
+        self.pcie_rx_history = pcie_rx_history or self.pcie_rx_history
+        self.pcie_tx_history = pcie_tx_history or self.pcie_tx_history
         self.update(self.render_detail())
 
     def _content_width(self) -> int:
@@ -722,15 +729,15 @@ class SelectedGPUDetailPanel(Static):
             Text(f" {percent_label:>4}" if show_percent else "", style=color),
         )
 
-    def _pcie_line(self, label: str, value: str, throughput_kbps: Optional[int]) -> Text:
+    def _pcie_line(self, label: str, value: str, throughput_kbps: Optional[int], history) -> Text:
         content_width = self._content_width()
         label_width = 18
         value_width = 14
         spark_width = max(content_width - label_width - value_width - 1, 0)
         sparkline = ""
         if throughput_kbps is not None and spark_width >= 6:
-            spark_values = [0, throughput_kbps * 0.25, throughput_kbps * 0.45, throughput_kbps * 0.35, throughput_kbps * 0.55, throughput_kbps]
-            sparkline = render_sparkline(spark_values, spark_width, max(throughput_kbps, 1))
+            history_values = list(history)[-spark_width:] if history is not None else [throughput_kbps]
+            sparkline = render_sparkline(history_values, spark_width, max(max(history_values or [0]), throughput_kbps, 1))
         return Text.assemble(
             Text(f"{label:<{label_width}}", style=BTOP_MUTED),
             Text(f"{truncate_text(value, value_width):<{value_width}}", style=BTOP_TEXT),
@@ -786,8 +793,8 @@ class SelectedGPUDetailPanel(Static):
             self._bar_line("Memory Clock", format_na(memory_clock, " MHz"), (memory_clock or 0) / 12000 * 100, BTOP_CYAN, False),
             self._bar_line("SM Clock", format_na(sm_clock, " MHz"), (sm_clock or 0) / 3000 * 100, BTOP_CYAN, False),
             self._separator(),
-            self._pcie_line("PCIe RX", format_data_rate(pcie_rx).replace("N/A", "n/a"), pcie_rx),
-            self._pcie_line("PCIe TX", format_data_rate(pcie_tx).replace("N/A", "n/a"), pcie_tx),
+            self._pcie_line("PCIe RX", format_data_rate(pcie_rx).replace("N/A", "n/a"), pcie_rx, self.pcie_rx_history),
+            self._pcie_line("PCIe TX", format_data_rate(pcie_tx).replace("N/A", "n/a"), pcie_tx, self.pcie_tx_history),
             self._pair_line("PCIe Gen", getattr(self.gpu_stats, "pcie_gen", None) or "n/a"),
             self._pair_line("Link Width", getattr(self.gpu_stats, "pcie_link_width", None) or "n/a"),
             self._pair_line("Link State", "Active" if pcie_rx is not None or pcie_tx is not None else "n/a", BTOP_GREEN if pcie_rx is not None or pcie_tx is not None else BTOP_MUTED),
