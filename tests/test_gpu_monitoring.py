@@ -1,9 +1,11 @@
 import importlib
 import sys
+import tempfile
 import types
 import unittest
 from collections import deque
-from contextlib import contextmanager
+from pathlib import Path
+from contextlib import ExitStack, contextmanager
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -565,6 +567,83 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertEqual(gpu._read_pcie_link_width("handle"), "x16")
         self.assertEqual(gpu._read_ecc_errors("handle"), 5)
         self.assertEqual(gpu._read_performance_cap("handle"), "Idle, SW Power")
+
+    def test_jetson_backend_updates_unified_gpu_stats_fields(self):
+        jetson = importlib.import_module("xtop.backend.gpu.jetson")
+        models = importlib.import_module("xtop.backend.gpu.models")
+
+        backend = jetson.JetsonGPU.__new__(jetson.JetsonGPU)
+        backend.start = True
+        backend.power_limit = None
+        backend.gpus = [models.GPUStats(0, "Jetson Orin", "540.4.0 / L4T 36.4.7", "12.6", "8.7", uuid="jetson-uuid")]
+
+        with ExitStack() as stack:
+            stack.enter_context(patch.object(backend, "_get_memory_info", return_value=(7621.0, 813.0, 6808.0)))
+            stack.enter_context(patch.object(backend, "_get_fan_info", return_value=(29, 1513)))
+            stack.enter_context(patch.object(backend, "_get_gpu_clock_mhz", return_value=306))
+            stack.enter_context(patch.object(backend, "_get_gpu_utilization", return_value=12))
+            stack.enter_context(patch.object(backend, "_get_power_usage", return_value=0.6))
+            stack.enter_context(patch.object(backend, "_get_gpu_temperature", return_value=43))
+            stack.enter_context(patch.object(backend, "_get_emc_clock_mhz", return_value=None))
+            stack.enter_context(patch.object(backend, "_read_current_user_processes", return_value=[]))
+            stack.enter_context(patch.object(backend, "_format_system_uptime", return_value="01:02:03"))
+            stack.enter_context(patch.object(backend, "_get_ecc_errors", return_value=0))
+            backend.update()
+
+        gpu = backend.gpus[0]
+        self.assertEqual(gpu.utilization, 12)
+        self.assertEqual(gpu.graphics_clock_mhz, 306)
+        self.assertEqual(gpu.sm_clock_mhz, 306)
+        self.assertIsNone(gpu.pcie_rx_kbps)
+        self.assertEqual(gpu.uptime, "01:02:03")
+        self.assertEqual(gpu.ecc_errors, 0)
+        self.assertEqual(gpu.current_user_process_count, 0)
+
+    def test_jetson_sysfs_helpers_read_jp6_fields_without_misusing_frequency_as_load(self):
+        jetson = importlib.import_module("xtop.backend.gpu.jetson")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            gpu_path = root / "gpu"
+            devfreq_path = root / "devfreq"
+            thermal_path = root / "thermal"
+            hwmon_path = root / "hwmon"
+            ina_path = hwmon_path / "hwmon1"
+            pwm_path = hwmon_path / "hwmon0"
+            tach_path = hwmon_path / "hwmon2"
+            ecc_path = gpu_path / "gr0_fecs_ecc_corrected_err_count"
+            for path in (gpu_path, devfreq_path, thermal_path / "thermal_zone1", ina_path, pwm_path, tach_path):
+                path.mkdir(parents=True)
+
+            (devfreq_path / "cur_freq").write_text("306000000")
+            (thermal_path / "thermal_zone1" / "type").write_text("gpu-thermal")
+            (thermal_path / "thermal_zone1" / "temp").write_text("43718")
+            (ina_path / "name").write_text("ina3221")
+            (ina_path / "in1_label").write_text("VDD_IN")
+            (ina_path / "in1_input").write_text("4968")
+            (ina_path / "curr1_input").write_text("952")
+            (ina_path / "in2_label").write_text("VDD_CPU_GPU_CV")
+            (ina_path / "in2_input").write_text("4968")
+            (ina_path / "curr2_input").write_text("104")
+            (pwm_path / "name").write_text("pwmfan")
+            (pwm_path / "pwm1").write_text("76")
+            (tach_path / "name").write_text("pwm_tach")
+            (tach_path / "rpm").write_text("1513")
+            ecc_path.write_text("2")
+
+            backend = jetson.JetsonGPU.__new__(jetson.JetsonGPU)
+            backend.GPU_LOAD_PATHS = (str(root / "missing-load"),)
+            backend.GPU_DEVFREQ_PATHS = (str(devfreq_path),)
+            backend.GPU_PLATFORM_PATHS = (str(gpu_path),)
+            backend.THERMAL_ZONE_PATH = str(thermal_path)
+            backend.HWMON_PATH = str(hwmon_path)
+
+            self.assertIsNone(backend._get_gpu_utilization())
+            self.assertEqual(backend._get_gpu_clock_mhz(), 306)
+            self.assertEqual(backend._get_gpu_temperature(), 43)
+            self.assertEqual(backend._get_power_usage(), 0.5)
+            self.assertEqual(backend._get_fan_info(), (29, 1513))
+            self.assertEqual(backend._get_ecc_errors(), 2)
 
     def test_mock_gpu_backend_updates_multi_gpu_current_user_processes(self):
         mock = importlib.import_module("xtop.backend.gpu.mock")
