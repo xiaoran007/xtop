@@ -77,6 +77,9 @@ class XtopTUI(App):
     BINDINGS = [
         ("q", "quit", "Quit"),
         ("s", "toggle_graph_style", "Graph Style"),
+        ("g", "show_charts", "Charts"),
+        ("d", "show_details", "Details"),
+        ("p", "show_processes", "Processes"),
         ("j", "select_next_gpu", "Next GPU"),
         ("right", "select_next_gpu", "Next GPU"),
         ("down", "select_next_gpu", "Next GPU"),
@@ -162,6 +165,7 @@ class XtopTUI(App):
         self.gpu_process_widget = None
         self.gpu_status_widget = None
         self.refresh_interval = 0.7
+        self.compact_body_page = "charts"
 
     def compose(self) -> ComposeResult:
         """Create child widgets for the app."""
@@ -246,9 +250,29 @@ class XtopTUI(App):
         if self.has_npu:
             self.npu_backend.shutdown()
 
+    def on_resize(self, event=None) -> None:
+        """Recalculate dashboard density when the terminal size changes."""
+        if self.has_gpu:
+            self._refresh_gpu_widgets()
+
     def action_toggle_graph_style(self) -> None:
         """Toggle between block and braille graph styles."""
         self.graph_style = GraphStyle.BLOCK if self.graph_style == GraphStyle.BRAILLE else GraphStyle.BRAILLE
+        self._refresh_gpu_widgets()
+
+    def action_show_charts(self) -> None:
+        """Show compact chart page."""
+        self.compact_body_page = "charts"
+        self._refresh_gpu_widgets()
+
+    def action_show_details(self) -> None:
+        """Show compact selected-GPU detail page."""
+        self.compact_body_page = "details"
+        self._refresh_gpu_widgets()
+
+    def action_show_processes(self) -> None:
+        """Show compact process page."""
+        self.compact_body_page = "processes"
         self._refresh_gpu_widgets()
 
     def action_select_next_gpu(self) -> None:
@@ -355,7 +379,7 @@ class XtopTUI(App):
         layout = self._resolve_dashboard_layout()
         self._apply_dashboard_layout(layout)
         backend_label = self._gpu_backend_label()
-        self.top_header_widget.update_snapshot(selected_gpu, len(self.gpu_backend.gpus), backend_label, self.refresh_interval)
+        self.top_header_widget.update_snapshot(selected_gpu, len(self.gpu_backend.gpus), backend_label, self.refresh_interval, layout)
         self.gpu_overview_widget.update_snapshot(self.gpu_backend.gpus, selected_gpu.gpu_id, layout, self.utilization_history)
         self.gpu_history_widget.update_snapshot(
             selected_gpu,
@@ -401,18 +425,53 @@ class XtopTUI(App):
         return resolve_gpu_dashboard_layout(width, height)
 
     def _apply_dashboard_layout(self, layout) -> None:
-        main_layout = "vertical" if layout.mode == "narrow" else "horizontal"
+        main_layout = "horizontal" if layout.density in {"wide", "normal"} else "vertical"
         if self.gpu_main_row is not None:
             self.gpu_main_row.styles.layout = main_layout
+            self.gpu_main_row.styles.display = "block"
+        if self.gpu_overview_row is not None:
+            self.gpu_overview_row.styles.display = "none" if layout.too_small else "block"
+        if self.gpu_status_row is not None:
+            self.gpu_status_row.styles.display = "none" if layout.too_small else "block"
         if self.gpu_left_column is not None:
             self.gpu_left_column.styles.width = layout.history_width
+            self.gpu_left_column.styles.display = "block"
         if self.gpu_overview_widget is not None:
             self.gpu_overview_widget.styles.width = layout.overview_width
         if self.gpu_history_widget is not None:
             self.gpu_history_widget.styles.width = layout.history_width
+            self.gpu_history_widget.styles.display = "block"
         if self.gpu_detail_widget is not None:
             self.gpu_detail_widget.styles.width = layout.detail_width
+            self.gpu_detail_widget.styles.display = "block"
         if self.gpu_process_widget is not None:
             self.gpu_process_widget.styles.width = layout.process_width
+            self.gpu_process_widget.styles.display = "block"
         if self.gpu_status_widget is not None:
             self.gpu_status_widget.styles.width = layout.status_width
+
+        if layout.too_small:
+            if self.gpu_left_column is not None:
+                self.gpu_left_column.styles.display = "block"
+                self.gpu_left_column.styles.width = layout.body_width
+            if self.gpu_history_widget is not None:
+                self.gpu_history_widget.styles.display = "block"
+            if self.gpu_process_widget is not None:
+                self.gpu_process_widget.styles.display = "none"
+            if self.gpu_detail_widget is not None:
+                self.gpu_detail_widget.styles.display = "none"
+            return
+
+        if layout.density == "compact":
+            if self.gpu_left_column is not None:
+                self.gpu_left_column.styles.width = layout.body_width
+                self.gpu_left_column.styles.display = "none" if self.compact_body_page == "details" else "block"
+            if self.gpu_history_widget is not None:
+                self.gpu_history_widget.styles.width = layout.body_width
+                self.gpu_history_widget.styles.display = "block" if self.compact_body_page == "charts" else "none"
+            if self.gpu_process_widget is not None:
+                self.gpu_process_widget.styles.width = layout.body_width
+                self.gpu_process_widget.styles.display = "block" if self.compact_body_page == "processes" else "none"
+            if self.gpu_detail_widget is not None:
+                self.gpu_detail_widget.styles.width = layout.body_width
+                self.gpu_detail_widget.styles.display = "block" if self.compact_body_page == "details" else "none"

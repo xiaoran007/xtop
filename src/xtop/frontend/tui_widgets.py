@@ -441,21 +441,24 @@ class TopHeaderWidget(Static):
         self.backend_label = backend_label
         self.selected_gpu = None
         self.gpu_count = 0
+        self.dashboard_layout = resolve_gpu_dashboard_layout(120, 32)
 
     def on_mount(self) -> None:
         self.update_timer = self.set_interval(1.0, self.update_time)
         self.update_time()
 
-    def update_snapshot(self, selected_gpu, gpu_count: int, backend_label: str, refresh_interval: float) -> None:
+    def update_snapshot(self, selected_gpu, gpu_count: int, backend_label: str, refresh_interval: float, layout: Optional[GPUDashboardLayout] = None) -> None:
         self.selected_gpu = selected_gpu
         self.gpu_count = gpu_count
         self.backend_label = backend_label
         self.refresh_interval = refresh_interval
+        if layout is not None:
+            self.dashboard_layout = layout
         self.update_time()
 
     def render_header(self, current_time: Optional[str] = None) -> Text:
         current_time = current_time or datetime.now().strftime("%H:%M:%S")
-        width = getattr(getattr(self, "size", None), "width", 0) or 96
+        width = self.dashboard_layout.total_width or getattr(getattr(self, "size", None), "width", 0) or 96
         if self.selected_gpu is None:
             selected_label = "GPU: n/a"
         else:
@@ -465,7 +468,10 @@ class TopHeaderWidget(Static):
             )
         refresh_label = f"{self.refresh_interval:.1f}".rstrip("0").rstrip(".") + "s"
         left = f"xtop    {selected_label}    | Backend: {self.backend_label} | Refresh: {refresh_label} |"
-        right = "[1-9] Switch  [j/k] GPU  [s] Graph  [q] Quit"
+        if self.dashboard_layout.density == "compact":
+            right = "[1-9] GPU [g] Charts [d] Detail [p] Proc [s] Graph [q] Quit"
+        else:
+            right = "[1-9] Switch  [j/k] GPU  [s] Graph  [q] Quit"
         available = max(width - len(left) - len(right) - 2, 1)
         line = f"{left} {current_time}{' ' * available}{right}"
         return Text(truncate_text(line, width), style=f"bold {BTOP_TEXT}")
@@ -528,8 +534,19 @@ class GPUHistoryWidget(Static):
         self.update(self.render_history())
 
     def render_history(self) -> RenderableType:
+        if self.dashboard_layout.too_small:
+            lines = [
+                Text("Terminal too small for xtop GPU dashboard.", style=f"bold {BTOP_YELLOW}"),
+                Text("Minimum size: 80x24", style=BTOP_TEXT),
+                Text(f"Current size: {self.dashboard_layout.total_width}x{self.dashboard_layout.total_height}", style=BTOP_MUTED),
+            ]
+            return make_box("xtop", lines, self.dashboard_layout.body_width, BTOP_BORDER_YELLOW)
+
         if self.gpu_stats is None:
             return make_box("gpu", [Text("No GPU selected.", style=BTOP_YELLOW)], self.dashboard_layout.history_width, BTOP_BORDER_GREEN)
+
+        if self.dashboard_layout.density == "compact":
+            return self._render_compact_history()
 
         util_value = getattr(self.gpu_stats, "utilization", 0) or 0
         mem_used = getattr(self.gpu_stats, "memory_used", None)
@@ -597,6 +614,34 @@ class GPUHistoryWidget(Static):
         )
         return make_box(title, lines, self.dashboard_layout.history_width, BTOP_BORDER_GREEN)
 
+    def _compact_chart_line(self, label: str, values, max_value: float, current_label: str, color: str) -> Text:
+        content_width = max(self.dashboard_layout.body_width - 2, 20)
+        label_width = 7
+        value_width = min(max(len(current_label), 4), 14)
+        spark_width = max(content_width - label_width - value_width - 2, 8)
+        return Text.assemble(
+            Text(f"{label:<{label_width}}", style=f"bold {color}"),
+            Text(render_sparkline(values, spark_width, max_value), style=color),
+            Text(f" {truncate_text(current_label, value_width):>{value_width}}", style=color),
+        )
+
+    def _render_compact_history(self) -> RenderableType:
+        util_value = getattr(self.gpu_stats, "utilization", 0) or 0
+        mem_used = getattr(self.gpu_stats, "memory_used", None)
+        mem_total = getattr(self.gpu_stats, "memory_total", None)
+        power_usage = getattr(self.gpu_stats, "power_usage", None) or 0
+        power_limit = getattr(self.gpu_stats, "power_limit", None) or max(power_usage, 1)
+        temperature = getattr(self.gpu_stats, "temperature", None) or 0
+        temp_color = BTOP_GREEN if temperature < 75 else BTOP_ORANGE if temperature < 88 else BTOP_RED
+        title = f"CHARTS  GPU {self.gpu_stats.gpu_id} - {truncate_text(self.gpu_stats.name, 18)}"
+        lines = [
+            self._compact_chart_line("UTIL", self.utilization_history, 100.0, format_percent(util_value), BTOP_CYAN),
+            self._compact_chart_line("MEM", self.memory_history, mem_total or 1.0, f"{format_memory_gib(mem_used)}/{format_memory_gib(mem_total)}G", BTOP_YELLOW),
+            self._compact_chart_line("PWR", self.power_history, power_limit, f"{power_usage:.0f}/{power_limit:.0f}W", BTOP_MAGENTA),
+            self._compact_chart_line("TEMP", self.temperature_history, 100.0, format_na(temperature, "C"), temp_color),
+        ]
+        return make_box(title, lines, self.dashboard_layout.body_width, BTOP_BORDER_GREEN)
+
 
 class GPUOverviewWidget(Static):
     """Fixed multi-GPU overview and switcher row."""
@@ -648,17 +693,49 @@ class GPUOverviewWidget(Static):
         ]
         return build_box_lines("", lines, card_width, border_style)
 
+    def _compact_card_lines(self, gpu, card_width: int) -> list[Text]:
+        content_width = max(card_width - 2, 20)
+        gpu_id = getattr(gpu, "gpu_id", 0)
+        selected = gpu_id == self.selected_gpu_id
+        util = getattr(gpu, "utilization", None)
+        mem_percent = calculate_memory_percent(gpu)
+        power_percent = calculate_power_percent(gpu)
+        temp = getattr(gpu, "temperature", None)
+        history = self.utilization_history.get(gpu_id, deque([util or 0.0], maxlen=1))
+        active_label = " ACTIVE" if selected else ""
+        border_style = BTOP_CYAN if selected else BTOP_MUTED
+        name_width = max(content_width - 18, 8)
+        lines = [
+            Text(
+                f"{gpu_id:<2} {truncate_text(getattr(gpu, 'name', 'unknown'), name_width)}{active_label:>7} {format_percent(util):>4}",
+                style=f"bold {BTOP_CYAN if selected else BTOP_TEXT}",
+            ),
+            Text(render_sparkline(history, max(content_width - 2, 8), 100.0), style=BTOP_CYAN),
+            Text(
+                f"Mem {format_percent(mem_percent):>4}  Pwr {format_percent(power_percent):>4}  Temp {format_na(temp, 'C'):>4}",
+                style=BTOP_TEXT,
+            ),
+        ]
+        return build_box_lines("", lines, card_width, border_style)
+
     def render_overview(self) -> RenderableType:
         if not self.gpus:
             return make_box("OVERVIEW  GPU SWITCHER", [Text("No GPUs detected.", style=BTOP_MUTED)], self.dashboard_layout.overview_width, BTOP_BORDER_GREEN)
 
         content_width = max(self.dashboard_layout.overview_width - 2, 20)
-        card_width = min(self.dashboard_layout.meter_width, max(28, content_width // max(min(len(self.gpus), 4), 1) - 1))
-        max_cards = max(1, content_width // (card_width + 1))
+        if self.dashboard_layout.overview_compact:
+            max_cards = max(1, min(self.dashboard_layout.overview_card_count, len(self.gpus)))
+            card_width = max(28, (content_width - max_cards + 1) // max_cards)
+        else:
+            card_width = min(self.dashboard_layout.meter_width, max(28, content_width // max(min(len(self.gpus), 4), 1) - 1))
+            max_cards = max(1, min(self.dashboard_layout.overview_card_count or 4, content_width // (card_width + 1)))
         selected_position = next((index for index, gpu in enumerate(self.gpus) if getattr(gpu, "gpu_id", None) == self.selected_gpu_id), 0)
         start = max(0, min(selected_position - max_cards // 2, len(self.gpus) - max_cards))
         visible_gpus = self.gpus[start : start + max_cards]
-        rendered_cards = [self._card_lines(gpu, card_width) for gpu in visible_gpus]
+        if self.dashboard_layout.overview_compact:
+            rendered_cards = [self._compact_card_lines(gpu, card_width) for gpu in visible_gpus]
+        else:
+            rendered_cards = [self._card_lines(gpu, card_width) for gpu in visible_gpus]
         row_count = max(len(card) for card in rendered_cards)
         rows = []
         for row_index in range(row_count):
@@ -806,7 +883,7 @@ class SelectedGPUDetailPanel(Static):
             self._pair_line("ECC Errors", str(getattr(self.gpu_stats, "ecc_errors", 0) if getattr(self.gpu_stats, "ecc_errors", None) is not None else "n/a")),
             self._pair_line("Performance Cap", getattr(self.gpu_stats, "performance_cap", None) or "None"),
         ]
-        if self.dashboard_layout.mode != "narrow":
+        if self.dashboard_layout.density in {"wide", "normal"}:
             while len(lines) < self._target_content_height():
                 lines.append(Text(""))
         return make_box("SELECTED GPU", lines, self.dashboard_layout.detail_width, BTOP_BORDER_GREEN)

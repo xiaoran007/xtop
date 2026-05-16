@@ -184,21 +184,28 @@ class GPUMonitoringTests(unittest.TestCase):
         with stub_textual_and_rich():
             tui = importlib.import_module("xtop.frontend.tui")
 
-        narrow = tui.resolve_gpu_dashboard_layout(88, 32)
-        normal = tui.resolve_gpu_dashboard_layout(128, 32)
-        wide = tui.resolve_gpu_dashboard_layout(220, 32)
-        same_height = tui.resolve_gpu_dashboard_layout(140, 32)
+        compact = tui.resolve_gpu_dashboard_layout(80, 24)
+        too_small = tui.resolve_gpu_dashboard_layout(79, 23)
+        mid_compact = tui.resolve_gpu_dashboard_layout(100, 30)
+        normal = tui.resolve_gpu_dashboard_layout(120, 36)
+        wide = tui.resolve_gpu_dashboard_layout(160, 48)
+        same_height = tui.resolve_gpu_dashboard_layout(140, 36)
 
-        self.assertEqual(narrow.mode, "narrow")
+        self.assertEqual(compact.density, "compact")
+        self.assertEqual(mid_compact.density, "compact")
+        self.assertFalse(compact.too_small)
+        self.assertTrue(too_small.too_small)
         self.assertEqual(normal.mode, "normal")
         self.assertEqual(wide.mode, "wide")
-        self.assertGreater(wide.graph_width, narrow.graph_width)
+        self.assertGreater(wide.graph_width, compact.graph_width)
         self.assertGreater(wide.process_width, wide.resource_width)
         self.assertEqual(wide.history_width + wide.detail_width, wide.overview_width)
         self.assertEqual(normal.history_width + normal.detail_width, normal.overview_width)
-        self.assertFalse(narrow.show_command_summary)
+        self.assertEqual(compact.overview_card_count, 2)
+        self.assertTrue(compact.overview_compact)
+        self.assertFalse(compact.show_command_summary)
         self.assertTrue(wide.show_command_summary)
-        self.assertEqual(same_height.process_rows, wide.process_rows)
+        self.assertLessEqual(same_height.process_rows, wide.process_rows)
 
     def test_btop_style_widgets_render_selected_gpu_blocks(self):
         with stub_textual_and_rich():
@@ -330,6 +337,101 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertIn("Driver 550.54", status_rendered)
         self.assertIn("CUDA 12.4", status_rendered)
         self.assertIn("mock data", status_rendered)
+
+    def test_compact_dashboard_renders_within_80_columns(self):
+        with stub_textual_and_rich():
+            tui = importlib.import_module("xtop.frontend.tui")
+
+        layout = tui.resolve_gpu_dashboard_layout(80, 24)
+        gpus = [
+            SimpleNamespace(
+                gpu_id=index,
+                name=f"Mock RTX {6000 + index * 100}",
+                utilization=10 + index * 20,
+                memory_used=8192 + index * 1024,
+                memory_total=49152,
+                power_usage=80 + index * 20,
+                power_limit=450,
+                temperature=45 + index,
+                fan_speed=30 + index,
+                fan_speed_rpm=1200 + index * 20,
+                driver_version="555.99",
+                cuda_version="12.5",
+                processes=[],
+            )
+            for index in range(4)
+        ]
+        histories = {gpu.gpu_id: deque([gpu.utilization - 5, gpu.utilization], maxlen=120) for gpu in gpus}
+
+        overview = tui.GPUOverviewWidget()
+        overview.update_snapshot(gpus, 3, layout, histories)
+        overview_rendered = str(overview.render_overview())
+        self.assertIn("Mock RTX 6300", overview_rendered)
+        self.assertLessEqual(overview_rendered.count("Mock RTX"), 2)
+        self.assertTrue(all(len(line) <= 80 for line in overview_rendered.splitlines()))
+
+        history = tui.GPUHistoryWidget()
+        selected_gpu = gpus[3]
+        history.update_snapshot(
+            selected_gpu,
+            4,
+            histories[selected_gpu.gpu_id],
+            deque([12000, 13000], maxlen=120),
+            tui.GraphStyle.BRAILLE,
+            layout,
+            gpus,
+            deque([100, 180], maxlen=120),
+            deque([50, 58], maxlen=120),
+        )
+        history_rendered = str(history.render_history())
+        self.assertIn("UTIL", history_rendered)
+        self.assertIn("MEM", history_rendered)
+        self.assertIn("PWR", history_rendered)
+        self.assertIn("TEMP", history_rendered)
+        self.assertTrue(all(len(line) <= 80 for line in history_rendered.splitlines()))
+
+        detail = tui.SelectedGPUDetailPanel()
+        detail.update_snapshot(selected_gpu, layout)
+        detail_rendered = str(detail.render_detail())
+        self.assertTrue(all(len(line) <= 80 for line in detail_rendered.splitlines()))
+
+        process_panel = tui.GPUProcessPanel()
+        selected_gpu.processes = [
+            SimpleNamespace(pid=1, username="xiaoran", name="python", command_summary="python train.py", used_memory_mb=1024)
+        ]
+        process_panel.update_snapshot(selected_gpu, layout)
+        process_rendered = str(process_panel.render_processes())
+        self.assertTrue(all(len(line) <= 80 for line in process_rendered.splitlines()))
+
+    def test_compact_app_pages_toggle_visible_body_widget(self):
+        with stub_textual_and_rich():
+            tui = importlib.import_module("xtop.frontend.tui")
+
+        class DummyWidget:
+            def __init__(self):
+                self.styles = SimpleNamespace()
+
+        app = tui.XtopTUI.__new__(tui.XtopTUI)
+        app.compact_body_page = "processes"
+        app.gpu_main_row = DummyWidget()
+        app.gpu_overview_row = DummyWidget()
+        app.gpu_status_row = DummyWidget()
+        app.gpu_left_column = DummyWidget()
+        app.gpu_overview_widget = DummyWidget()
+        app.gpu_history_widget = DummyWidget()
+        app.gpu_detail_widget = DummyWidget()
+        app.gpu_process_widget = DummyWidget()
+        app.gpu_status_widget = DummyWidget()
+
+        app._apply_dashboard_layout(tui.resolve_gpu_dashboard_layout(80, 24))
+        self.assertEqual(app.gpu_history_widget.styles.display, "none")
+        self.assertEqual(app.gpu_process_widget.styles.display, "block")
+        self.assertEqual(app.gpu_detail_widget.styles.display, "none")
+
+        app.compact_body_page = "details"
+        app._apply_dashboard_layout(tui.resolve_gpu_dashboard_layout(80, 24))
+        self.assertEqual(app.gpu_left_column.styles.display, "none")
+        self.assertEqual(app.gpu_detail_widget.styles.display, "block")
 
     def test_process_panel_height_is_stable_when_process_count_changes(self):
         with stub_textual_and_rich():
