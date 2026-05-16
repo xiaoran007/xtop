@@ -76,6 +76,13 @@ def stub_textual_and_rich():
         def mount(self, *args, **kwargs):
             pass
 
+    class Vertical:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def mount(self, *args, **kwargs):
+            pass
+
     class Static:
         def __init__(self, *args, **kwargs):
             pass
@@ -98,6 +105,7 @@ def stub_textual_and_rich():
     textual_app.ComposeResult = object
     textual_color.Color = Color
     textual_containers.Horizontal = Horizontal
+    textual_containers.Vertical = Vertical
     textual_containers.VerticalScroll = VerticalScroll
     textual_widgets.Footer = Footer
     textual_widgets.Header = Header

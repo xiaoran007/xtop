@@ -76,6 +76,13 @@ def stub_textual_and_rich():
         def mount(self, *args, **kwargs):
             pass
 
+    class Vertical:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def mount(self, *args, **kwargs):
+            pass
+
     class Static:
         def __init__(self, *args, **kwargs):
             pass
@@ -98,6 +105,7 @@ def stub_textual_and_rich():
     textual_app.ComposeResult = object
     textual_color.Color = Color
     textual_containers.Horizontal = Horizontal
+    textual_containers.Vertical = Vertical
     textual_containers.VerticalScroll = VerticalScroll
     textual_widgets.Footer = Footer
     textual_widgets.Header = Header
@@ -171,7 +179,21 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertTrue(wide.show_command_summary)
         self.assertGreater(wide.process_limit, compact.process_limit)
 
-    def test_gpu_widget_renders_process_section_and_extended_metrics(self):
+    def test_dashboard_layout_expands_graph_width_and_fixes_process_budget(self):
+        with stub_textual_and_rich():
+            tui = importlib.import_module("xtop.frontend.tui")
+
+        narrow = tui.resolve_gpu_dashboard_layout(88, 32)
+        wide = tui.resolve_gpu_dashboard_layout(220, 32)
+        same_height = tui.resolve_gpu_dashboard_layout(140, 32)
+
+        self.assertGreater(wide.graph_width, narrow.graph_width)
+        self.assertGreater(wide.right_width, wide.left_width)
+        self.assertFalse(narrow.show_command_summary)
+        self.assertTrue(wide.show_command_summary)
+        self.assertEqual(same_height.process_limit, wide.process_limit)
+
+    def test_gpu_detail_excludes_processes_and_process_panel_renders_them(self):
         with stub_textual_and_rich():
             tui = importlib.import_module("xtop.frontend.tui")
 
@@ -212,10 +234,37 @@ class GPUMonitoringTests(unittest.TestCase):
         widget.size = SimpleNamespace(width=128, height=36)
         rendered = str(widget.render_stats())
 
-        self.assertIn("Processes (current user): 1", rendered)
         self.assertIn("Clocks GFX/SM/MEM", rendered)
         self.assertIn("PCIe RX/TX", rendered)
-        self.assertIn("python train.py", rendered)
+        self.assertNotIn("Processes", rendered)
+        self.assertNotIn("python train.py", rendered)
+
+        process_widget = tui.GPUProcessWidget()
+        process_widget.update_snapshot(gpu_stats, tui.resolve_gpu_dashboard_layout(180, 36))
+        process_rendered = str(process_widget.render_processes())
+
+        self.assertIn("Processes", process_rendered)
+        self.assertIn("python train.py", process_rendered)
+
+    def test_process_panel_height_is_stable_when_process_count_changes(self):
+        with stub_textual_and_rich():
+            tui = importlib.import_module("xtop.frontend.tui")
+
+        layout = tui.resolve_gpu_dashboard_layout(180, 36)
+        one_process = [
+            SimpleNamespace(pid=100, process_type="compute", name="python", command_summary="python train.py", used_memory_mb=1024)
+        ]
+        three_processes = one_process + [
+            SimpleNamespace(pid=101, process_type="compute", name="torchrun", command_summary="torchrun job.py", used_memory_mb=2048),
+            SimpleNamespace(pid=102, process_type="compute", name="python", command_summary="python serve.py", used_memory_mb=512),
+        ]
+
+        one_rendered = "\n".join(str(line) for line in tui.build_process_panel_lines(one_process, layout))
+        three_rendered = "\n".join(str(line) for line in tui.build_process_panel_lines(three_processes, layout))
+
+        self.assertEqual(one_rendered.count("\n"), three_rendered.count("\n"))
+        self.assertIn("current user: 1", one_rendered)
+        self.assertIn("current user: 3", three_rendered)
 
     def test_gpu_widget_keeps_graph_when_widget_height_is_transiently_small(self):
         with stub_textual_and_rich():
