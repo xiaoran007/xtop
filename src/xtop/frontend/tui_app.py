@@ -56,7 +56,7 @@ class XtopTUI(App):
 
     #gpu-overview-row,
     #gpu-main-row,
-    #gpu-process-row,
+    #gpu-left-column,
     #gpu-status-row {
         width: 100%;
         height: auto;
@@ -152,7 +152,7 @@ class XtopTUI(App):
         self.top_header_widget = None
         self.gpu_overview_row = None
         self.gpu_main_row = None
-        self.gpu_process_row = None
+        self.gpu_left_column = None
         self.gpu_status_row = None
         self.gpu_overview_widget = None
         self.gpu_history_widget = None
@@ -206,7 +206,7 @@ class XtopTUI(App):
             dashboard = Vertical(id="gpu-dashboard")
             self.gpu_overview_row = Horizontal(id="gpu-overview-row")
             self.gpu_main_row = Horizontal(id="gpu-main-row")
-            self.gpu_process_row = Horizontal(id="gpu-process-row")
+            self.gpu_left_column = Vertical(id="gpu-left-column")
             self.gpu_status_row = Horizontal(id="gpu-status-row")
             self.gpu_overview_widget = GPUOverviewWidget()
             self.gpu_history_widget = GPUHistoryWidget(self.graph_style)
@@ -217,12 +217,12 @@ class XtopTUI(App):
             container.mount(dashboard)
             dashboard.mount(self.gpu_overview_row)
             dashboard.mount(self.gpu_main_row)
-            dashboard.mount(self.gpu_process_row)
             dashboard.mount(self.gpu_status_row)
             self.gpu_overview_row.mount(self.gpu_overview_widget)
-            self.gpu_main_row.mount(self.gpu_history_widget)
+            self.gpu_main_row.mount(self.gpu_left_column)
             self.gpu_main_row.mount(self.gpu_detail_widget)
-            self.gpu_process_row.mount(self.gpu_process_widget)
+            self.gpu_left_column.mount(self.gpu_history_widget)
+            self.gpu_left_column.mount(self.gpu_process_widget)
             self.gpu_status_row.mount(self.gpu_status_widget)
             self._refresh_gpu_widgets()
 
@@ -393,6 +393,8 @@ class XtopTUI(App):
         main_layout = "vertical" if layout.mode == "narrow" else "horizontal"
         if self.gpu_main_row is not None:
             self.gpu_main_row.styles.layout = main_layout
+        if self.gpu_left_column is not None:
+            self.gpu_left_column.styles.width = layout.history_width
         if self.gpu_overview_widget is not None:
             self.gpu_overview_widget.styles.width = layout.overview_width
         if self.gpu_history_widget is not None:
