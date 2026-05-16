@@ -744,7 +744,7 @@ class SelectedGPUDetailPanel(Static):
             + 4
         )
         process_rows = self.dashboard_layout.process_rows + 1
-        return chart_rows + process_rows + 3
+        return chart_rows + process_rows + 2
 
     def render_detail(self) -> RenderableType:
         if self.gpu_stats is None:
