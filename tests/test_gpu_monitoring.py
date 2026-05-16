@@ -263,6 +263,14 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertIn("Backend: NVML", header_rendered)
         self.assertIn("[1-9] Switch", header_rendered)
 
+        header_widget.dashboard_layout = tui.resolve_gpu_dashboard_layout(160, 48)
+        header_widget.selected_gpu = SimpleNamespace(**{**gpu_stats.__dict__, "name": "Mock RTX 6000 48GB Max-Q Blackwell Edition"})
+        wide_header = str(header_widget.render_header("13:29:50"))
+        self.assertIn("48GB", wide_header)
+        self.assertIn("[q] Quit", wide_header)
+        self.assertNotIn("Graph...", wide_header)
+        self.assertLessEqual(len(wide_header), 160)
+
         overview_widget = tui.GPUOverviewWidget()
         other_gpu = SimpleNamespace(**{**gpu_stats.__dict__, "gpu_id": 1, "utilization": 12})
         overview_widget.update_snapshot([gpu_stats, other_gpu], gpu_stats.gpu_id, layout, {0: deque([25, 50, 75], maxlen=120), 1: deque([5, 10, 12], maxlen=120)})

@@ -459,21 +459,30 @@ class TopHeaderWidget(Static):
     def render_header(self, current_time: Optional[str] = None) -> Text:
         current_time = current_time or datetime.now().strftime("%H:%M:%S")
         width = self.dashboard_layout.total_width or getattr(getattr(self, "size", None), "width", 0) or 96
-        if self.selected_gpu is None:
-            selected_label = "GPU: n/a"
-        else:
-            selected_label = (
-                f"GPU: {getattr(self.selected_gpu, 'gpu_id', 0)} > "
-                f"{truncate_text(getattr(self.selected_gpu, 'name', 'unknown'), 24)}"
-            )
         refresh_label = f"{self.refresh_interval:.1f}".rstrip("0").rstrip(".") + "s"
-        left = f"xtop    {selected_label}    | Backend: {self.backend_label} | Refresh: {refresh_label} |"
         if self.dashboard_layout.density == "compact":
-            right = "[1-9] GPU [g] Charts [d] Detail [p] Proc [s] Graph [q] Quit"
+            right_options = [
+                "[1-9] GPU [g] Charts [d] Detail [p] Proc [s] Graph [q] Quit",
+                "[1-9] GPU [g] Charts [d] Detail [p] Proc [q] Quit",
+                "[1-9] GPU [g/d/p] View [q] Quit",
+            ]
         else:
-            right = "[1-9] Switch  [j/k] GPU  [s] Graph  [q] Quit"
-        available = max(width - len(left) - len(right) - 2, 1)
-        line = f"{left} {current_time}{' ' * available}{right}"
+            right_options = [
+                "[1-9] Switch  [j/k] GPU  [s] Graph  [q] Quit",
+                "[1-9] Switch  [j/k] GPU  [q] Quit",
+                "[1-9] GPU  [q] Quit",
+            ]
+        fixed_prefix = "xtop    GPU: "
+        gpu_id = "n/a" if self.selected_gpu is None else str(getattr(self.selected_gpu, "gpu_id", 0))
+        gpu_name = "n/a" if self.selected_gpu is None else getattr(self.selected_gpu, "name", "unknown")
+        fixed_middle = f"    | Backend: {self.backend_label} | Refresh: {refresh_label} | {current_time}"
+        right = next((candidate for candidate in right_options if len(candidate) <= max(width // 3, 16)), right_options[-1])
+        reserved = len(fixed_prefix) + len(gpu_id) + 3 + len(fixed_middle) + len(right) + 2
+        name_width = max(8, width - reserved)
+        selected_label = f"{fixed_prefix}{gpu_id} > {truncate_text(gpu_name, name_width)}"
+        left = f"{selected_label}{fixed_middle}"
+        available = max(width - len(left) - len(right), 1)
+        line = f"{left}{' ' * available}{right}"
         return Text(truncate_text(line, width), style=f"bold {BTOP_TEXT}")
 
     def update_time(self) -> None:
