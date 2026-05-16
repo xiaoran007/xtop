@@ -20,7 +20,7 @@ class MockNvidiaGPU:
         self.gpus = [
             GPUStats(
                 gpu_id=index,
-                name=f"Mock RTX {6000 + index * 100}",
+                name=f"Mock RTX {6000 + index * 100} 48GB Max-Q Blackwell Server Edition",
                 driver_version="555.99",
                 cuda_version="12.5",
                 cuda_cc="9.0",
