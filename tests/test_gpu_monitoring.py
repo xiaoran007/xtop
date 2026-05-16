@@ -194,6 +194,8 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertEqual(wide.mode, "wide")
         self.assertGreater(wide.graph_width, narrow.graph_width)
         self.assertGreater(wide.process_width, wide.resource_width)
+        self.assertEqual(wide.history_width + wide.detail_width, wide.overview_width)
+        self.assertEqual(normal.history_width + normal.detail_width, normal.overview_width)
         self.assertFalse(narrow.show_command_summary)
         self.assertTrue(wide.show_command_summary)
         self.assertEqual(same_height.process_rows, wide.process_rows)

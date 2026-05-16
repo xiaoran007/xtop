@@ -135,7 +135,7 @@ def resolve_gpu_dashboard_layout(width: int, height: int) -> GPUDashboardLayout:
     if total_width >= 160:
         mode = "wide"
         detail_width = min(52, max(42, total_width // 3))
-        history_width = max(total_width - detail_width - 3, 80)
+        history_width = max(total_width - detail_width, 80)
         meter_width = min(48, max(34, (total_width - 6) // 4))
         resource_width = detail_width
         process_width = history_width
@@ -146,7 +146,7 @@ def resolve_gpu_dashboard_layout(width: int, height: int) -> GPUDashboardLayout:
     elif total_width >= 100:
         mode = "normal"
         detail_width = min(42, max(34, total_width // 3))
-        history_width = max(total_width - detail_width - 3, 56)
+        history_width = max(total_width - detail_width, 56)
         meter_width = min(40, max(30, (total_width - 4) // 3))
         resource_width = detail_width
         process_width = history_width
