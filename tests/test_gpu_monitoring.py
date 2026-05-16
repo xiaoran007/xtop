@@ -541,6 +541,31 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertIn("train.py", current_user.command_summary)
         self.assertIsNone(other_user)
 
+    def test_nvidia_optional_detail_helpers_read_nvml_fields(self):
+        with stub_pynvml() as fake_nvml:
+            nvidia = importlib.import_module("xtop.backend.gpu.nvidia")
+
+        fake_nvml.nvmlDeviceGetCurrPcieLinkGeneration = lambda handle: 4
+        fake_nvml.nvmlDeviceGetMaxPcieLinkGeneration = lambda handle: 5
+        fake_nvml.nvmlDeviceGetCurrPcieLinkWidth = lambda handle: 16
+        fake_nvml.nvmlDeviceGetMaxPcieLinkWidth = lambda handle: 16
+        fake_nvml.NVML_MEMORY_ERROR_TYPE_CORRECTED = 0
+        fake_nvml.NVML_MEMORY_ERROR_TYPE_UNCORRECTED = 1
+        fake_nvml.NVML_AGGREGATE_ECC = 0
+        fake_nvml.NVML_VOLATILE_ECC = 1
+        fake_nvml.nvmlDeviceGetTotalEccErrors = lambda handle, error_type, counter_type: 2 if error_type == 0 else 3
+        fake_nvml.nvmlClocksThrottleReasonNone = 0
+        fake_nvml.nvmlClocksThrottleReasonGpuIdle = 1
+        fake_nvml.nvmlClocksThrottleReasonSwPowerCap = 4
+        fake_nvml.nvmlDeviceGetCurrentClocksThrottleReasons = lambda handle: 5
+
+        gpu = nvidia.NvidiaGPU.__new__(nvidia.NvidiaGPU)
+
+        self.assertEqual(gpu._read_pcie_generation("handle"), "Gen4/max5")
+        self.assertEqual(gpu._read_pcie_link_width("handle"), "x16")
+        self.assertEqual(gpu._read_ecc_errors("handle"), 5)
+        self.assertEqual(gpu._read_performance_cap("handle"), "Idle, SW Power")
+
     def test_mock_gpu_backend_updates_multi_gpu_current_user_processes(self):
         mock = importlib.import_module("xtop.backend.gpu.mock")
 
@@ -553,6 +578,12 @@ class GPUMonitoringTests(unittest.TestCase):
         for gpu in backend.gpus:
             self.assertIsNotNone(gpu.utilization)
             self.assertGreater(gpu.memory_total, 0)
+            self.assertIsNotNone(gpu.uuid)
+            self.assertEqual(gpu.pcie_gen, "Gen4")
+            self.assertEqual(gpu.pcie_link_width, "x16")
+            self.assertIsNotNone(gpu.uptime)
+            self.assertEqual(gpu.ecc_errors, 0)
+            self.assertEqual(gpu.performance_cap, "None")
             self.assertGreaterEqual(len(gpu.processes), 1)
             self.assertEqual(gpu.current_user_process_count, len(gpu.processes))
             self.assertTrue(all(process.username == backend.current_username for process in gpu.processes))
