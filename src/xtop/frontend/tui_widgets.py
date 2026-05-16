@@ -19,16 +19,6 @@ from .tui_layout import (
 )
 
 
-def make_widget_line(message: str, style: str, content_width: int) -> Text:
-    """Create a single bordered line with truncated content."""
-    return Text(f"| {truncate_text(message, content_width)}", style=style)
-
-
-def build_separator(style: str, content_width: int) -> Text:
-    """Create a separator for a widget card."""
-    return Text("|" + "-" * (content_width + 1), style=style)
-
-
 def resolve_terminal_height(widget, fallback: int = 28) -> int:
     """Prefer viewport height over the widget's transient auto-layout height."""
     size = getattr(widget, "size", None)
@@ -48,8 +38,76 @@ def resolve_terminal_height(widget, fallback: int = 28) -> int:
     return max(candidates)
 
 
+def calculate_memory_percent(gpu_stats) -> float:
+    mem_used = getattr(gpu_stats, "memory_used", 0) or 0
+    mem_total = getattr(gpu_stats, "memory_total", 0) or 0
+    if mem_total <= 0:
+        return 0.0
+    return mem_used / mem_total * 100.0
+
+
+def format_memory_value(memory_mb: Optional[float]) -> str:
+    if memory_mb is None:
+        return "N/A"
+    if memory_mb >= 1024:
+        return f"{memory_mb / 1024:.1f}G"
+    return f"{memory_mb:.0f}M"
+
+
+def format_power_summary(gpu_stats) -> str:
+    power_usage = getattr(gpu_stats, "power_usage", None)
+    power_limit = getattr(gpu_stats, "power_limit", None)
+    if power_usage is not None and power_limit:
+        return f"{power_usage:.1f}W/{power_limit:.0f}W"
+    if power_usage is not None:
+        return f"{power_usage:.1f}W"
+    return "N/A"
+
+
+def format_fan_summary(gpu_stats, show_rpm: bool = True) -> str:
+    fan_speed = getattr(gpu_stats, "fan_speed", None)
+    fan_speed_rpm = getattr(gpu_stats, "fan_speed_rpm", None)
+    if fan_speed is not None and fan_speed_rpm is not None and show_rpm:
+        return f"{fan_speed_rpm}RPM/{fan_speed}%"
+    if fan_speed is not None:
+        return f"{fan_speed}%"
+    return "N/A"
+
+
+def render_bar(percent: float, width: int) -> str:
+    width = max(width, 4)
+    filled = int(width * max(0.0, min(percent, 100.0)) / 100.0)
+    return "█" * filled + "·" * (width - filled)
+
+
+def make_widget_line(message: str, style: str, content_width: int) -> Text:
+    """Create a single bordered line with truncated content."""
+    return Text(f"| {truncate_text(message, content_width)}", style=style)
+
+
+def build_separator(style: str, content_width: int) -> Text:
+    """Create a separator for compatibility renderers."""
+    return Text("|" + "-" * (content_width + 1), style=style)
+
+
+def make_box(title: str, lines: list[Text], width: int, style: str = "cyan") -> Text:
+    """Render a btop-like bordered text block."""
+    content_width = max(width - 2, 16)
+    title_label = f" {title} "
+    if len(title_label) >= content_width:
+        title_label = title_label[:content_width]
+    top = "+" + title_label + "-" * max(content_width - len(title_label), 0) + "+"
+    bottom = "+" + "-" * content_width + "+"
+    rendered = [Text(top, style=style)]
+    for line in lines:
+        text = truncate_text(str(line), content_width)
+        rendered.append(Text(f"|{text:<{content_width}}|", style=getattr(line, "style", None) or style))
+    rendered.append(Text(bottom, style=style))
+    return Text("\n").join(rendered)
+
+
 def build_process_lines(processes, layout: GPUWidgetLayout) -> list[str]:
-    """Render current-user GPU processes into compact, width-aware rows."""
+    """Compatibility renderer for current-user GPU processes."""
     total = len(processes)
     if total == 0:
         return ["Processes (current user): 0", "No current-user GPU processes."]
@@ -83,76 +141,36 @@ def build_process_lines(processes, layout: GPUWidgetLayout) -> list[str]:
 
 
 def build_process_panel_lines(processes, layout: GPUDashboardLayout) -> list[Text]:
-    """Render selected-GPU processes in a fixed-height left panel."""
-    content_width = max(layout.left_width - 2, 28)
-    visible_processes = list(processes)[: layout.process_limit]
+    """Render selected-GPU processes with a fixed row budget."""
+    visible_processes = list(processes)[: layout.process_rows]
     hidden_count = max(len(processes) - len(visible_processes), 0)
-    lines = [
-        Text("Processes", style="bold cyan"),
-        Text(truncate_text(f"current user: {len(processes)}", content_width), style="cyan"),
-    ]
+    header = "PID     Type     GPU Mem  Command" if layout.show_command_summary else "PID     Type     GPU Mem  Name"
+    lines = [Text(header, style="bold green")]
 
     if not visible_processes:
-        lines.append(Text("No current-user GPU processes.", style="cyan"))
+        lines.append(Text("No current-user GPU processes.", style="green"))
     else:
         for process in visible_processes:
             pid = getattr(process, "pid", "?")
-            process_type = truncate_text(getattr(process, "process_type", "?") or "?", 7)
-            process_name = truncate_text(getattr(process, "name", None) or "unknown", 12)
-            memory_label = format_process_memory(getattr(process, "used_memory_mb", None))
+            process_type = truncate_text(getattr(process, "process_type", "?") or "?", 8)
+            process_name = getattr(process, "name", None) or "unknown"
             command_summary = getattr(process, "command_summary", None)
-
-            if layout.show_command_summary and command_summary:
-                row = f"{pid:<6} {memory_label:>6} {process_type:<7} {command_summary}"
-            else:
-                row = f"{pid:<6} {memory_label:>6} {process_type:<7} {process_name}"
-            lines.append(Text(truncate_text(row, content_width), style="cyan"))
+            label = command_summary if layout.show_command_summary and command_summary else process_name
+            memory_label = format_process_memory(getattr(process, "used_memory_mb", None))
+            lines.append(Text(f"{pid:<7} {process_type:<8} {memory_label:>7}  {label}", style="green"))
 
     if hidden_count:
-        lines.append(Text(truncate_text(f"... and {hidden_count} more", content_width), style="cyan"))
+        lines.append(Text(f"... and {hidden_count} more", style="green"))
 
-    target_rows = layout.process_limit + 3
+    target_rows = layout.process_rows + 1
     while len(lines) < target_rows:
         lines.append(Text(""))
 
     return lines[:target_rows]
 
 
-def calculate_memory_percent(gpu_stats) -> float:
-    mem_used = getattr(gpu_stats, "memory_used", 0) or 0
-    mem_total = getattr(gpu_stats, "memory_total", 0) or 0
-    if mem_total <= 0:
-        return 0.0
-    return mem_used / mem_total * 100.0
-
-
-def format_power_summary(gpu_stats) -> str:
-    power_usage = getattr(gpu_stats, "power_usage", None)
-    power_limit = getattr(gpu_stats, "power_limit", None)
-    if power_usage is not None and power_limit:
-        return f"{power_usage:.1f}W / {power_limit:.1f}W ({power_usage / power_limit * 100:.0f}%)"
-    if power_usage is not None:
-        return f"{power_usage:.1f}W"
-    return "N/A"
-
-
-def format_fan_summary(gpu_stats) -> str:
-    fan_speed = getattr(gpu_stats, "fan_speed", None)
-    fan_speed_rpm = getattr(gpu_stats, "fan_speed_rpm", None)
-    if fan_speed is not None and fan_speed_rpm is not None:
-        return f"{fan_speed_rpm} RPM ({fan_speed}%)"
-    if fan_speed is not None:
-        return f"{fan_speed}%"
-    return "N/A"
-
-
-def render_bar(percent: float, width: int) -> str:
-    width = max(width, 4)
-    filled = int(width * max(0.0, min(percent, 100.0)) / 100.0)
-    return "█" * filled + "░" * (width - filled)
-
-
 def build_gpu_detail_lines(gpu_stats, layout, util_history, mem_history, graph_style) -> list[Text]:
+    """Compatibility single-GPU card renderer."""
     content_width = layout.content_width
     util_value = getattr(gpu_stats, "utilization", 0) or 0
     mem_used = getattr(gpu_stats, "memory_used", 0) or 0
@@ -160,81 +178,69 @@ def build_gpu_detail_lines(gpu_stats, layout, util_history, mem_history, graph_s
     mem_free = getattr(gpu_stats, "memory_free", 0) or 0
     mem_percent = calculate_memory_percent(gpu_stats)
 
-    result_lines = [
-        build_separator("cyan", content_width),
-        make_widget_line(f"GPU {gpu_stats.gpu_id}: {gpu_stats.name}", "bold cyan", content_width),
-    ]
-
-    if layout.show_driver_info:
-        result_lines.append(
-            make_widget_line(
-                f"Driver: {gpu_stats.driver_version} | CUDA: {gpu_stats.cuda_version} | Compute Capability: {gpu_stats.cuda_cc}",
-                "cyan",
-                content_width,
-            )
-        )
-
-    result_lines.append(build_separator("cyan", content_width))
-
-    metric_lines = [
-        f"GPU Usage: {util_value:>3}% | Memory: {mem_used:.0f}/{mem_total:.0f} MB ({mem_percent:.1f}%) | Free: {mem_free:.0f} MB",
-        f"Power: {format_power_summary(gpu_stats)} | Temp: {format_optional_number(getattr(gpu_stats, 'temperature', None), 'C')} | Fan: {format_fan_summary(gpu_stats)}",
+    lines = [
+        Text(f"GPU {gpu_stats.gpu_id}: {gpu_stats.name}", style="bold cyan"),
+        Text(f"GPU Usage: {util_value:>3}% | Memory: {mem_used:.0f}/{mem_total:.0f} MB ({mem_percent:.1f}%) | Free: {mem_free:.0f} MB", style="cyan"),
+        Text(f"Power: {format_power_summary(gpu_stats)} | Temp: {format_optional_number(getattr(gpu_stats, 'temperature', None), 'C')} | Fan: {format_fan_summary(gpu_stats)}", style="cyan"),
     ]
 
     if layout.show_extended_metrics:
-        metric_lines.append(
-            "Clocks GFX/SM/MEM: "
-            f"{format_optional_number(getattr(gpu_stats, 'graphics_clock_mhz', None), 'MHz')} / "
-            f"{format_optional_number(getattr(gpu_stats, 'sm_clock_mhz', None), 'MHz')} / "
-            f"{format_optional_number(getattr(gpu_stats, 'memory_clock_mhz', None), 'MHz')}"
+        lines.append(
+            Text(
+                "Clocks GFX/SM/MEM: "
+                f"{format_optional_number(getattr(gpu_stats, 'graphics_clock_mhz', None), 'MHz')} / "
+                f"{format_optional_number(getattr(gpu_stats, 'sm_clock_mhz', None), 'MHz')} / "
+                f"{format_optional_number(getattr(gpu_stats, 'memory_clock_mhz', None), 'MHz')}",
+                style="cyan",
+            )
         )
 
-    metric_lines.append(
-        f"P-State: {getattr(gpu_stats, 'p_state', None) or 'N/A'} | "
-        f"PCIe RX/TX: {format_data_rate(getattr(gpu_stats, 'pcie_rx_kbps', None))} / "
-        f"{format_data_rate(getattr(gpu_stats, 'pcie_tx_kbps', None))}"
+    lines.append(
+        Text(
+            f"P-State: {getattr(gpu_stats, 'p_state', None) or 'N/A'} | "
+            f"PCIe RX/TX: {format_data_rate(getattr(gpu_stats, 'pcie_rx_kbps', None))} / "
+            f"{format_data_rate(getattr(gpu_stats, 'pcie_tx_kbps', None))}",
+            style="cyan",
+        )
     )
 
-    for line in metric_lines:
-        result_lines.append(make_widget_line(line, "cyan", content_width))
-
     if layout.show_graph:
-        result_lines.append(Text("| Utilization", style="cyan"))
-        for line in create_graph(
-            util_history,
-            layout.graph_width,
-            layout.graph_height,
-            100.0,
-            ColorTheme.GPU_BLUE,
-            graph_style,
-        ):
-            result_lines.append(Text.assemble(Text("| ", style="cyan"), line))
+        lines.append(Text("Utilization", style="bold cyan"))
+        lines.extend(
+            create_graph(
+                util_history,
+                layout.graph_width,
+                layout.graph_height,
+                100.0,
+                ColorTheme.GPU_BLUE,
+                graph_style,
+            )
+        )
+        lines.append(Text("Memory", style="bold magenta"))
+        lines.extend(
+            create_graph(
+                mem_history,
+                layout.graph_width,
+                max(3, layout.graph_height // 2),
+                100.0,
+                ColorTheme.NPU_MAGENTA,
+                graph_style,
+            )
+        )
 
-        result_lines.append(Text("| Memory", style="magenta"))
-        for line in create_graph(
-            mem_history,
-            layout.graph_width,
-            max(3, layout.graph_height // 2),
-            100.0,
-            ColorTheme.NPU_MAGENTA,
-            graph_style,
-        ):
-            result_lines.append(Text.assemble(Text("| ", style="magenta"), line))
-
-    result_lines.append(build_separator("cyan", content_width))
-    return result_lines
+    return str(make_box("gpu", lines, content_width + 2, "cyan")).splitlines()
 
 
 class TimeWidget(Static):
-    """A widget to display current time and key hints."""
+    """A compact top status and key hint line."""
 
     def on_mount(self) -> None:
         self.update_timer = self.set_interval(1.0, self.update_time)
         self.update_time()
 
     def update_time(self) -> None:
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.update(Text(f"xtop | {current_time} | q quit | j/k or arrows select GPU | s graph style", style="bold yellow"))
+        current_time = datetime.now().strftime("%H:%M:%S")
+        self.update(Text(f"xtop  {current_time}  q quit  j/k select gpu  s graph style", style="bold yellow"))
 
 
 class StatusWidget(Static):
@@ -245,56 +251,132 @@ class StatusWidget(Static):
         self.message = message
 
     def render(self) -> RenderableType:
-        separator = Text("|" + "-" * 78, style="yellow")
-        body = Text(f"| {self.message}", style="yellow")
-        return Text("\n").join([separator, body, separator])
+        return make_box("status", [Text(self.message, style="yellow")], 80, "yellow")
 
 
-class GPUOverviewWidget(Static):
-    """A compact overview of all detected GPUs."""
+class GPUHistoryWidget(Static):
+    """Selected GPU long history panel."""
+
+    def __init__(self, graph_style: GraphStyle = GraphStyle.BRAILLE) -> None:
+        super().__init__(id="gpu-history")
+        self.gpu_stats = None
+        self.gpu_count = 0
+        self.utilization_history = deque([0.0] * 120, maxlen=120)
+        self.memory_history = deque([0.0] * 120, maxlen=120)
+        self.graph_style = graph_style
+        self.dashboard_layout = resolve_gpu_dashboard_layout(120, 32)
+
+    def update_snapshot(self, gpu_stats, gpu_count, utilization_history, memory_history, graph_style, layout):
+        self.gpu_stats = gpu_stats
+        self.gpu_count = gpu_count
+        self.utilization_history = utilization_history
+        self.memory_history = memory_history
+        self.graph_style = graph_style
+        self.dashboard_layout = layout
+        self.update(self.render_history())
+
+    def render_history(self) -> RenderableType:
+        if self.gpu_stats is None:
+            return make_box("gpu", [Text("No GPU selected.", style="yellow")], self.dashboard_layout.history_width)
+
+        util_value = getattr(self.gpu_stats, "utilization", 0) or 0
+        mem_percent = calculate_memory_percent(self.gpu_stats)
+        title = f"1 gpu {self.gpu_stats.gpu_id + 1}/{max(self.gpu_count, 1)}"
+        graph_lines = create_graph(
+            self.utilization_history,
+            self.dashboard_layout.graph_width,
+            self.dashboard_layout.history_height,
+            100.0,
+            ColorTheme.GPU_BLUE,
+            self.graph_style,
+        )
+        summary = (
+            f"total -- gpu-totals  {self.gpu_stats.name}  "
+            f"util {util_value}%  mem {mem_percent:.0f}%  "
+            f"power {format_power_summary(self.gpu_stats)}  "
+            f"temp {format_optional_number(getattr(self.gpu_stats, 'temperature', None), 'C')}"
+        )
+        lines = graph_lines + [Text(truncate_text(summary, self.dashboard_layout.history_width - 2), style="bold cyan")]
+        return make_box(title, lines, self.dashboard_layout.history_width, "green")
+
+
+class GPUMeterWidget(Static):
+    """All-GPU compact meter panel."""
 
     def __init__(self) -> None:
-        super().__init__(id="gpu-overview")
+        super().__init__(id="gpu-meters")
         self.gpus = []
         self.selected_gpu_id = 0
         self.dashboard_layout = resolve_gpu_dashboard_layout(120, 32)
 
-    def update_snapshot(self, gpus, selected_gpu_id: int, layout: Optional[GPUDashboardLayout] = None) -> None:
+    def update_snapshot(self, gpus, selected_gpu_id, layout):
         self.gpus = list(gpus)
         self.selected_gpu_id = selected_gpu_id
-        if layout is not None:
-            self.dashboard_layout = layout
-        self.update(self.render_overview())
+        self.dashboard_layout = layout
+        self.update(self.render_meters())
 
-    def render_overview(self) -> RenderableType:
-        width = self.dashboard_layout.left_width
-        bar_width = self.dashboard_layout.overview_bar_width
-        lines = [
-            Text("GPU Overview", style="bold cyan"),
-            Text(truncate_text("Sel ID  Util              Mem   Pwr Proc", width - 1), style="cyan"),
-        ]
-
+    def render_meters(self) -> RenderableType:
+        lines = [Text("GPU   Util                  Mem   Temp  Power", style="bold green")]
         for gpu in self.gpus:
             util = getattr(gpu, "utilization", 0) or 0
             mem_percent = calculate_memory_percent(gpu)
-            power = getattr(gpu, "power_usage", None)
-            power_label = "N/A" if power is None else f"{power:.0f}W"
-            process_count = len(getattr(gpu, "processes", []))
+            temp = format_optional_number(getattr(gpu, "temperature", None), "C")
+            power = format_power_summary(gpu)
             marker = ">" if gpu.gpu_id == self.selected_gpu_id else " "
             row = (
-                f"{marker}  {gpu.gpu_id:<2} "
-                f"{util:>3}% {render_bar(util, bar_width)} "
-                f"{mem_percent:>4.0f}% "
-                f"{power_label:>5} "
-                f"{process_count:>4}"
+                f"{marker}{gpu.gpu_id:<3} "
+                f"{render_bar(util, self.dashboard_layout.meter_bar_width)} {util:>3}% "
+                f"{mem_percent:>4.0f}% {temp:>5} {power:>9}"
             )
-            lines.append(Text(truncate_text(row, max(width - 1, 28)), style="bold cyan" if marker == ">" else "cyan"))
+            lines.append(Text(row, style="bold green" if marker == ">" else "green"))
+        return make_box("meters", lines, self.dashboard_layout.meter_width, "green")
 
-        return Text("\n").join(lines)
+
+class GPUOverviewWidget(GPUMeterWidget):
+    """Backward-compatible name for the all-GPU meter panel."""
+
+
+class GPUResourceWidget(Static):
+    """Selected GPU memory, power and thermal panel."""
+
+    def __init__(self) -> None:
+        super().__init__(id="gpu-resources")
+        self.gpu_stats = None
+        self.dashboard_layout = resolve_gpu_dashboard_layout(120, 32)
+
+    def update_snapshot(self, gpu_stats, layout):
+        self.gpu_stats = gpu_stats
+        self.dashboard_layout = layout
+        self.update(self.render_resources())
+
+    def render_resources(self) -> RenderableType:
+        if self.gpu_stats is None:
+            return make_box("mem", [Text("No GPU selected.", style="yellow")], self.dashboard_layout.resource_width)
+
+        mem_used = getattr(self.gpu_stats, "memory_used", 0) or 0
+        mem_total = getattr(self.gpu_stats, "memory_total", 0) or 0
+        mem_free = getattr(self.gpu_stats, "memory_free", 0) or 0
+        mem_percent = calculate_memory_percent(self.gpu_stats)
+        power_usage = getattr(self.gpu_stats, "power_usage", None)
+        power_limit = getattr(self.gpu_stats, "power_limit", None)
+        power_percent = power_usage / power_limit * 100 if power_usage is not None and power_limit else 0
+        temp = getattr(self.gpu_stats, "temperature", None)
+        temp_percent = min(max(temp or 0, 0), 100)
+        fan = format_fan_summary(self.gpu_stats, self.dashboard_layout.show_fan_rpm)
+
+        lines = [
+            Text(f"Total:     {format_memory_value(mem_total):>9}", style="bold yellow"),
+            Text(f"Used:  {render_bar(mem_percent, self.dashboard_layout.resource_bar_width)} {format_memory_value(mem_used):>9} {mem_percent:>4.0f}%", style="yellow"),
+            Text(f"Free:  {render_bar(100 - mem_percent, self.dashboard_layout.resource_bar_width)} {format_memory_value(mem_free):>9}", style="cyan"),
+            Text(f"Power: {render_bar(power_percent, self.dashboard_layout.resource_bar_width)} {format_power_summary(self.gpu_stats):>12}", style="red"),
+            Text(f"Temp:  {render_bar(temp_percent, self.dashboard_layout.resource_bar_width)} {format_optional_number(temp, 'C'):>12}", style="green"),
+            Text(f"Fan:   {fan:>12}", style="green"),
+        ]
+        return make_box("mem/power", lines, self.dashboard_layout.resource_width, "yellow")
 
 
 class GPUProcessWidget(Static):
-    """Selected GPU process panel with stable row budget."""
+    """Current-user GPU process table."""
 
     def __init__(self) -> None:
         super().__init__(id="gpu-processes")
@@ -307,19 +389,48 @@ class GPUProcessWidget(Static):
         self.update(self.render_processes())
 
     def render_processes(self) -> RenderableType:
-        return Text("\n").join(build_process_panel_lines(self.processes, self.dashboard_layout))
+        return make_box("proc", build_process_panel_lines(self.processes, self.dashboard_layout), self.dashboard_layout.process_width, "green")
 
 
-class GPUDetailWidget(Static):
-    """Selected GPU detail panel."""
+class GPUStatusWidget(Static):
+    """Bottom device and status line."""
 
-    def __init__(self, graph_style: GraphStyle = GraphStyle.BRAILLE) -> None:
-        super().__init__(id="gpu-detail")
+    def __init__(self) -> None:
+        super().__init__(id="gpu-status")
         self.gpu_stats = None
-        self.utilization_history = deque([0.0] * 120, maxlen=120)
-        self.memory_history = deque([0.0] * 120, maxlen=120)
-        self.graph_style = graph_style
+        self.status_messages = []
         self.dashboard_layout = resolve_gpu_dashboard_layout(120, 32)
+
+    def update_snapshot(self, gpu_stats, status_messages, layout):
+        self.gpu_stats = gpu_stats
+        self.status_messages = list(status_messages)
+        self.dashboard_layout = layout
+        self.update(self.render_status())
+
+    def render_status(self) -> RenderableType:
+        if self.gpu_stats is None:
+            return make_box("status", [Text("No GPU selected.", style="yellow")], self.dashboard_layout.status_width, "yellow")
+
+        parts = [
+            f"GPU {self.gpu_stats.gpu_id}: {self.gpu_stats.name}",
+            f"Driver {getattr(self.gpu_stats, 'driver_version', 'N/A')}",
+            f"CUDA {getattr(self.gpu_stats, 'cuda_version', 'N/A')}",
+            f"CC {getattr(self.gpu_stats, 'cuda_cc', 'N/A')}",
+            f"P-State {getattr(self.gpu_stats, 'p_state', None) or 'N/A'}",
+        ]
+        if self.dashboard_layout.show_pcie:
+            parts.append(
+                "PCIe RX/TX "
+                f"{format_data_rate(getattr(self.gpu_stats, 'pcie_rx_kbps', None))}/"
+                f"{format_data_rate(getattr(self.gpu_stats, 'pcie_tx_kbps', None))}"
+            )
+        if self.status_messages:
+            parts.append(" | ".join(self.status_messages))
+        return make_box("device/status", [Text("  ".join(parts), style="yellow")], self.dashboard_layout.status_width, "yellow")
+
+
+class GPUDetailWidget(GPUHistoryWidget):
+    """Backward-compatible selected-GPU detail widget."""
 
     def update_snapshot(
         self,
@@ -330,38 +441,16 @@ class GPUDetailWidget(Static):
         layout: Optional[GPUDashboardLayout] = None,
     ) -> None:
         self.gpu_stats = gpu_stats
+        self.gpu_count = 1
         self.utilization_history = utilization_history
         self.memory_history = memory_history
         self.graph_style = graph_style
         if layout is not None:
             self.dashboard_layout = layout
-        self.update(self.render_detail())
+        self.update(self.render_history())
 
     def render_detail(self) -> RenderableType:
-        if self.gpu_stats is None:
-            return Text("No GPU selected.", style="yellow")
-
-        height = resolve_terminal_height(self)
-        dashboard_layout = self.dashboard_layout
-        widget_layout = resolve_gpu_widget_layout(dashboard_layout.right_width, height)
-        widget_layout.content_width = max(dashboard_layout.right_width - 3, 36)
-        widget_layout.graph_width = dashboard_layout.graph_width
-        widget_layout.graph_height = dashboard_layout.utilization_graph_height
-        widget_layout.process_limit = dashboard_layout.process_limit
-        widget_layout.show_driver_info = dashboard_layout.show_driver_info
-        widget_layout.show_extended_metrics = dashboard_layout.show_extended_metrics
-        widget_layout.show_command_summary = False
-        widget_layout.compact_process_rows = dashboard_layout.compact
-
-        return Text("\n").join(
-            build_gpu_detail_lines(
-                self.gpu_stats,
-                widget_layout,
-                self.utilization_history,
-                self.memory_history,
-                self.graph_style,
-            )
-        )
+        return self.render_history()
 
 
 class GPUStatsWidget(Static):
@@ -389,7 +478,7 @@ class GPUStatsWidget(Static):
         layout = resolve_gpu_widget_layout(width, height)
         layout.process_limit = 0
         return Text("\n").join(
-            build_gpu_detail_lines(
+            Text(line) for line in build_gpu_detail_lines(
                 self.gpu_stats,
                 layout,
                 self.utilization_history,

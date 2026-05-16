@@ -17,20 +17,34 @@ class GPUWidgetLayout:
 
 @dataclass
 class GPUDashboardLayout:
+    mode: str
+    total_width: int
+    total_height: int
+    history_width: int
+    history_height: int
+    meter_width: int
+    resource_width: int
+    process_width: int
+    process_rows: int
+    status_width: int
+    graph_width: int
+    memory_graph_height: int
+    meter_bar_width: int
+    resource_bar_width: int
+    process_limit: int
+    show_command_summary: bool
+    show_extended_metrics: bool
+    show_driver_info: bool
+    show_pcie: bool
+    show_fan_rpm: bool
+    compact: bool
     overview_width: int
     detail_width: int
-    graph_width: int
     graph_height: int
-    process_limit: int
-    show_extended_metrics: bool
-    show_command_summary: bool
-    compact: bool
     left_width: int
     right_width: int
     overview_bar_width: int
     utilization_graph_height: int
-    memory_graph_height: int
-    show_driver_info: bool
 
 
 def truncate_text(value: str, max_width: int) -> str:
@@ -72,7 +86,7 @@ def format_process_memory(memory_mb: Optional[float]) -> str:
 
 
 def resolve_gpu_widget_layout(width: int, height: int) -> GPUWidgetLayout:
-    """Choose a GPU card layout that matches the available widget size."""
+    """Choose a single-card layout for compatibility renderers."""
     content_width = max(width - 3, 36)
     compact = content_width < 78
     show_extended_metrics = content_width >= 96
@@ -114,54 +128,92 @@ def resolve_gpu_widget_layout(width: int, height: int) -> GPUWidgetLayout:
 
 
 def resolve_gpu_dashboard_layout(width: int, height: int) -> GPUDashboardLayout:
-    """Choose dashboard dimensions from the full terminal size."""
-    terminal_width = max(width, 72)
-    terminal_height = max(height, 20)
-    compact = terminal_width < 104
+    """Choose btop-style dashboard regions from the terminal size."""
+    total_width = max(width, 72)
+    total_height = max(height, 22)
 
-    if terminal_width < 96:
-        left_width = 34
-    elif terminal_width < 132:
-        left_width = 44
-    elif terminal_width < 176:
-        left_width = 54
+    if total_width >= 160:
+        mode = "wide"
+        meter_width = min(64, max(48, total_width // 3))
+        history_width = max(total_width - meter_width - 3, 72)
+        resource_width = min(max(total_width // 3, 48), 70)
+        process_width = max(total_width - resource_width - 3, 52)
+        show_command_summary = True
+        show_extended_metrics = True
+        show_pcie = True
+        show_fan_rpm = True
+    elif total_width >= 100:
+        mode = "normal"
+        meter_width = min(44, max(36, total_width // 3))
+        history_width = max(total_width - meter_width - 3, 56)
+        resource_width = min(max(total_width // 3, 38), 52)
+        process_width = max(total_width - resource_width - 3, 44)
+        show_command_summary = total_width >= 128
+        show_extended_metrics = total_width >= 116
+        show_pcie = total_width >= 124
+        show_fan_rpm = total_width >= 112
     else:
-        left_width = min(66, max(58, terminal_width // 3))
+        mode = "narrow"
+        meter_width = total_width
+        history_width = total_width
+        resource_width = total_width
+        process_width = total_width
+        show_command_summary = False
+        show_extended_metrics = False
+        show_pcie = False
+        show_fan_rpm = False
 
-    right_width = max(terminal_width - left_width - 4, 40)
-
-    utilization_graph_height = 6
-    if terminal_height >= 42:
-        utilization_graph_height = 12
-    elif terminal_height >= 34:
-        utilization_graph_height = 10
-    elif terminal_height >= 28:
-        utilization_graph_height = 8
-
-    memory_graph_height = max(4, utilization_graph_height // 2)
-
-    if terminal_height >= 40:
-        process_limit = 8
-    elif terminal_height >= 32:
-        process_limit = 6
-    elif terminal_height >= 26:
-        process_limit = 4
+    if total_height >= 42:
+        history_height = 14
+        memory_graph_height = 5
+        process_rows = 10
+    elif total_height >= 34:
+        history_height = 11
+        memory_graph_height = 4
+        process_rows = 8
+    elif total_height >= 28:
+        history_height = 9
+        memory_graph_height = 3
+        process_rows = 6
     else:
-        process_limit = 3
+        history_height = 7
+        memory_graph_height = 3
+        process_rows = 4
+
+    if mode == "narrow":
+        process_rows = max(3, min(process_rows, 5))
+
+    graph_width = max(history_width - 4, 24)
+    meter_bar_width = max(8, min(18, meter_width - 34))
+    resource_bar_width = max(10, min(32, resource_width - 24))
 
     return GPUDashboardLayout(
-        overview_width=left_width,
-        detail_width=right_width,
-        graph_width=max(right_width - 4, 24),
-        graph_height=utilization_graph_height,
-        process_limit=process_limit,
-        show_extended_metrics=right_width >= 72,
-        show_command_summary=left_width >= 52,
-        compact=compact,
-        left_width=left_width,
-        right_width=right_width,
-        overview_bar_width=max(6, min(22, left_width - 30)),
-        utilization_graph_height=utilization_graph_height,
+        mode=mode,
+        total_width=total_width,
+        total_height=total_height,
+        history_width=history_width,
+        history_height=history_height,
+        meter_width=meter_width,
+        resource_width=resource_width,
+        process_width=process_width,
+        process_rows=process_rows,
+        status_width=total_width,
+        graph_width=graph_width,
         memory_graph_height=memory_graph_height,
-        show_driver_info=right_width >= 62,
+        meter_bar_width=meter_bar_width,
+        resource_bar_width=resource_bar_width,
+        process_limit=process_rows,
+        show_command_summary=show_command_summary,
+        show_extended_metrics=show_extended_metrics,
+        show_driver_info=total_width >= 100,
+        show_pcie=show_pcie,
+        show_fan_rpm=show_fan_rpm,
+        compact=mode == "narrow",
+        overview_width=meter_width,
+        detail_width=history_width,
+        graph_height=history_height,
+        left_width=resource_width,
+        right_width=process_width,
+        overview_bar_width=meter_bar_width,
+        utilization_graph_height=history_height,
     )

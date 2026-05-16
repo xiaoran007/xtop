@@ -15,7 +15,16 @@ from .tui_backends import (
 )
 from .tui_graphs import GraphStyle
 from .tui_layout import resolve_gpu_dashboard_layout
-from .tui_widgets import GPUDetailWidget, GPUOverviewWidget, GPUProcessWidget, StatusWidget, TimeWidget, calculate_memory_percent
+from .tui_widgets import (
+    GPUHistoryWidget,
+    GPUMeterWidget,
+    GPUProcessWidget,
+    GPUResourceWidget,
+    GPUStatusWidget,
+    StatusWidget,
+    TimeWidget,
+    calculate_memory_percent,
+)
 
 
 class XtopTUI(App):
@@ -37,23 +46,21 @@ class XtopTUI(App):
     }
 
     #gpu-dashboard {
-        height: auto;
-        min-height: 24;
         width: 100%;
     }
 
-    #gpu-left-column {
-        min-width: 32;
-        padding: 0 1 0 0;
+    #gpu-top-row,
+    #gpu-middle-row,
+    #gpu-bottom-row {
+        width: 100%;
+        height: auto;
     }
 
-    #gpu-right-column {
-        width: 1fr;
-    }
-
-    #gpu-overview,
+    #gpu-history,
+    #gpu-meters,
+    #gpu-resources,
     #gpu-processes,
-    #gpu-detail {
+    #gpu-status {
         width: 100%;
     }
     """
@@ -119,10 +126,15 @@ class XtopTUI(App):
         self.selected_gpu_index = 0
         self.utilization_history = {}
         self.memory_history = {}
-        self.gpu_left_column = None
-        self.gpu_right_column = None
-        self.gpu_overview_widget = None
+        self.gpu_top_row = None
+        self.gpu_middle_row = None
+        self.gpu_bottom_row = None
+        self.gpu_history_widget = None
+        self.gpu_meter_widget = None
+        self.gpu_resource_widget = None
         self.gpu_process_widget = None
+        self.gpu_status_widget = None
+        self.gpu_overview_widget = None
         self.gpu_detail_widget = None
 
     def compose(self) -> ComposeResult:
@@ -168,22 +180,32 @@ class XtopTUI(App):
             has_any_hardware = True
             self.gpu_backend.update()
             self._record_gpu_histories()
-            dashboard = Horizontal(id="gpu-dashboard")
-            self.gpu_left_column = Vertical(id="gpu-left-column")
-            self.gpu_right_column = Vertical(id="gpu-right-column")
-            self.gpu_overview_widget = GPUOverviewWidget()
+            dashboard = Vertical(id="gpu-dashboard")
+            self.gpu_top_row = Horizontal(id="gpu-top-row")
+            self.gpu_middle_row = Horizontal(id="gpu-middle-row")
+            self.gpu_bottom_row = Horizontal(id="gpu-bottom-row")
+            self.gpu_history_widget = GPUHistoryWidget(self.graph_style)
+            self.gpu_meter_widget = GPUMeterWidget()
+            self.gpu_resource_widget = GPUResourceWidget()
             self.gpu_process_widget = GPUProcessWidget()
-            self.gpu_detail_widget = GPUDetailWidget(self.graph_style)
+            self.gpu_status_widget = GPUStatusWidget()
+            self.gpu_overview_widget = self.gpu_meter_widget
+            self.gpu_detail_widget = self.gpu_history_widget
+
             container.mount(dashboard)
-            dashboard.mount(self.gpu_left_column)
-            dashboard.mount(self.gpu_right_column)
-            self.gpu_left_column.mount(self.gpu_overview_widget)
-            self.gpu_left_column.mount(self.gpu_process_widget)
-            self.gpu_right_column.mount(self.gpu_detail_widget)
+            dashboard.mount(self.gpu_top_row)
+            dashboard.mount(self.gpu_middle_row)
+            dashboard.mount(self.gpu_bottom_row)
+            self.gpu_top_row.mount(self.gpu_history_widget)
+            self.gpu_top_row.mount(self.gpu_meter_widget)
+            self.gpu_middle_row.mount(self.gpu_resource_widget)
+            self.gpu_middle_row.mount(self.gpu_process_widget)
+            self.gpu_bottom_row.mount(self.gpu_status_widget)
             self._refresh_gpu_widgets()
 
-        for message in dict.fromkeys(self.status_messages):
-            container.mount(StatusWidget(message))
+        if not self.has_gpu:
+            for message in dict.fromkeys(self.status_messages):
+                container.mount(StatusWidget(message))
 
         if has_any_hardware:
             self.update_timer = self.set_interval(0.7, self.update_data)
@@ -237,13 +259,20 @@ class XtopTUI(App):
 
     def _record_gpu_histories(self) -> None:
         for gpu in self.gpu_backend.gpus:
-            util_history = self.utilization_history.setdefault(gpu.gpu_id, deque([0.0] * 120, maxlen=120))
-            memory_history = self.memory_history.setdefault(gpu.gpu_id, deque([0.0] * 120, maxlen=120))
+            util_history = self.utilization_history.setdefault(gpu.gpu_id, deque([0.0] * 160, maxlen=160))
+            memory_history = self.memory_history.setdefault(gpu.gpu_id, deque([0.0] * 160, maxlen=160))
             util_history.append(getattr(gpu, "utilization", 0) or 0.0)
             memory_history.append(calculate_memory_percent(gpu))
 
     def _refresh_gpu_widgets(self) -> None:
-        if self.gpu_overview_widget is None or self.gpu_process_widget is None or self.gpu_detail_widget is None:
+        required_widgets = [
+            self.gpu_history_widget,
+            self.gpu_meter_widget,
+            self.gpu_resource_widget,
+            self.gpu_process_widget,
+            self.gpu_status_widget,
+        ]
+        if any(widget is None for widget in required_widgets):
             return
 
         selected_gpu = self._selected_gpu()
@@ -252,15 +281,18 @@ class XtopTUI(App):
 
         layout = self._resolve_dashboard_layout()
         self._apply_dashboard_layout(layout)
-        self.gpu_overview_widget.update_snapshot(self.gpu_backend.gpus, selected_gpu.gpu_id, layout)
-        self.gpu_process_widget.update_snapshot(selected_gpu, layout)
-        self.gpu_detail_widget.update_snapshot(
+        self.gpu_history_widget.update_snapshot(
             selected_gpu,
+            len(self.gpu_backend.gpus),
             self.utilization_history[selected_gpu.gpu_id],
             self.memory_history[selected_gpu.gpu_id],
             self.graph_style,
             layout,
         )
+        self.gpu_meter_widget.update_snapshot(self.gpu_backend.gpus, selected_gpu.gpu_id, layout)
+        self.gpu_resource_widget.update_snapshot(selected_gpu, layout)
+        self.gpu_process_widget.update_snapshot(selected_gpu, layout)
+        self.gpu_status_widget.update_snapshot(selected_gpu, self.status_messages, layout)
 
     def _resolve_dashboard_layout(self):
         size = getattr(self, "size", None)
@@ -274,7 +306,18 @@ class XtopTUI(App):
         return resolve_gpu_dashboard_layout(width, height)
 
     def _apply_dashboard_layout(self, layout) -> None:
-        if self.gpu_left_column is not None:
-            self.gpu_left_column.styles.width = layout.left_width
-        if self.gpu_right_column is not None:
-            self.gpu_right_column.styles.width = layout.right_width
+        row_layout = "vertical" if layout.mode == "narrow" else "horizontal"
+        if self.gpu_top_row is not None:
+            self.gpu_top_row.styles.layout = row_layout
+        if self.gpu_middle_row is not None:
+            self.gpu_middle_row.styles.layout = row_layout
+        if self.gpu_history_widget is not None:
+            self.gpu_history_widget.styles.width = layout.history_width
+        if self.gpu_meter_widget is not None:
+            self.gpu_meter_widget.styles.width = layout.meter_width
+        if self.gpu_resource_widget is not None:
+            self.gpu_resource_widget.styles.width = layout.resource_width
+        if self.gpu_process_widget is not None:
+            self.gpu_process_widget.styles.width = layout.process_width
+        if self.gpu_status_widget is not None:
+            self.gpu_status_widget.styles.width = layout.status_width
