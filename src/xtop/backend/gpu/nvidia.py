@@ -60,13 +60,14 @@ class NvidiaGPU:
     def update(self):
         for gpu in self.gpus:
             handle = pynvml.nvmlDeviceGetHandleByIndex(gpu.gpu_id)
-            utilization = pynvml.nvmlDeviceGetUtilizationRates(handle).gpu
-            mem_info = pynvml.nvmlDeviceGetMemoryInfo(handle)
-            temperature = pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU)
+            utilization_rates = _read_nvml_call(None, lambda: pynvml.nvmlDeviceGetUtilizationRates(handle))
+            utilization = getattr(utilization_rates, "gpu", None)
+            mem_info = _read_nvml_call(None, lambda: pynvml.nvmlDeviceGetMemoryInfo(handle))
+            temperature = _read_nvml_call(None, lambda: pynvml.nvmlDeviceGetTemperature(handle, pynvml.NVML_TEMPERATURE_GPU))
 
             fan_speed = _read_nvml_call(None, lambda: pynvml.nvmlDeviceGetFanSpeed(handle))
             fan_speed_rpm = _read_nvml_call(None, lambda: pynvml.nvmlDeviceGetFanSpeedRPM(handle))
-            power_usage = round(pynvml.nvmlDeviceGetPowerUsage(handle) / 1000, 1)
+            power_usage = _read_nvml_call(None, lambda: round(pynvml.nvmlDeviceGetPowerUsage(handle) / 1000, 1))
             power_limit = _read_nvml_call(None, lambda: round(pynvml.nvmlDeviceGetPowerManagementLimit(handle) / 1000, 1))
             p_state = _read_nvml_call(None, lambda: f"P{pynvml.nvmlDeviceGetPerformanceState(handle)}")
             graphics_clock_mhz = self._read_clock(handle, "NVML_CLOCK_GRAPHICS")
@@ -81,9 +82,9 @@ class NvidiaGPU:
             performance_cap = self._read_performance_cap(handle)
             processes = self._read_current_user_processes(handle)
 
-            mem_used = mem_info.used / (1024 ** 2)
-            mem_total = mem_info.total / (1024 ** 2)
-            mem_free = mem_info.free / (1024 ** 2)
+            mem_used = mem_info.used / (1024 ** 2) if mem_info is not None else None
+            mem_total = mem_info.total / (1024 ** 2) if mem_info is not None else None
+            mem_free = mem_info.free / (1024 ** 2) if mem_info is not None else None
             gpu.update(
                 utilization=utilization,
                 memory_used=mem_used,
