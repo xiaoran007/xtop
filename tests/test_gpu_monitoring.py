@@ -141,7 +141,11 @@ def stub_pynvml():
     class NVMLError(Exception):
         pass
 
+    class NVMLError_NotSupported(NVMLError):
+        pass
+
     fake_module.NVMLError = NVMLError
+    fake_module.NVMLError_NotSupported = NVMLError_NotSupported
     fake_module.nvmlSystemGetProcessName = lambda pid: f"proc-{pid}".encode()
 
     sys.modules["pynvml"] = fake_module
@@ -542,6 +546,36 @@ class GPUMonitoringTests(unittest.TestCase):
         self.assertEqual(current_user.name, "python")
         self.assertIn("train.py", current_user.command_summary)
         self.assertIsNone(other_user)
+
+    def test_nvidia_update_keeps_gpu_when_memory_info_is_not_supported(self):
+        with stub_pynvml() as fake_nvml:
+            nvidia = importlib.import_module("xtop.backend.gpu.nvidia")
+
+        fake_nvml.NVML_TEMPERATURE_GPU = 0
+        fake_nvml.nvmlDeviceGetHandleByIndex = lambda index: f"handle-{index}"
+        fake_nvml.nvmlDeviceGetUtilizationRates = lambda handle: SimpleNamespace(gpu=17)
+        fake_nvml.nvmlDeviceGetMemoryInfo = lambda handle: (_ for _ in ()).throw(fake_nvml.NVMLError_NotSupported())
+        fake_nvml.nvmlDeviceGetTemperature = lambda handle, sensor: 41
+        fake_nvml.nvmlDeviceGetFanSpeed = lambda handle: 0
+        fake_nvml.nvmlDeviceGetFanSpeedRPM = lambda handle: 0
+        fake_nvml.nvmlDeviceGetPowerUsage = lambda handle: 135000
+        fake_nvml.nvmlDeviceGetPowerManagementLimit = lambda handle: 300000
+        fake_nvml.nvmlDeviceGetPerformanceState = lambda handle: 0
+
+        backend = nvidia.NvidiaGPU.__new__(nvidia.NvidiaGPU)
+        backend.gpus = [nvidia.GPUStats(0, "NVIDIA GB10", "595.71.05", "13.2", "12.1")]
+        backend._read_current_user_processes = lambda handle: []
+        backend._format_system_uptime = lambda: "01:02:03"
+
+        backend.update()
+
+        gpu = backend.gpus[0]
+        self.assertEqual(gpu.utilization, 17)
+        self.assertIsNone(gpu.memory_used)
+        self.assertIsNone(gpu.memory_total)
+        self.assertIsNone(gpu.memory_free)
+        self.assertEqual(gpu.temperature, 41)
+        self.assertEqual(gpu.power_usage, 135.0)
 
     def test_nvidia_optional_detail_helpers_read_nvml_fields(self):
         with stub_pynvml() as fake_nvml:
